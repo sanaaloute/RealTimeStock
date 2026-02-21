@@ -14,7 +14,7 @@ import sys
 from typing import Any
 
 import config
-from scrapers import SikaFinanceScraper, RichBourseScraper, RichBourseMouvementsScraper, BRVMScraper
+from scrapers import SikaFinanceScraper, RichBourseScraper, RichBourseTimeseriesScraper, BRVMScraper
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 SCRAPERS = {
     "sikafinance": (SikaFinanceScraper, config.SIKAFINANCE_PALMARES_URL),
     "richbourse": (RichBourseScraper, config.RICHBOURSE_URL),
-    "richbourse_mouvements": (RichBourseMouvementsScraper, "https://www.richbourse.com/common/mouvements/index"),
+    "richbourse_timeseries": (RichBourseTimeseriesScraper, "https://www.richbourse.com/common/mouvements/index"),
     "brvm": (BRVMScraper, config.BRVM_URL),
 }
 
@@ -65,7 +65,7 @@ def main() -> int:
     parser.add_argument(
         "--symbol",
         default=None,
-        help="Rich Bourse mouvements: stock symbol (e.g. NTLC). Required when --site richbourse_mouvements",
+        help="Rich Bourse timeseries: stock symbol (e.g. NTLC). Required when --site richbourse_timeseries",
     )
     args = parser.parse_args()
 
@@ -76,19 +76,19 @@ def main() -> int:
     sleep = args.sleep if args.sleep is not None else config.SLEEP_SECONDS
     results = {}
 
-    if args.site == "richbourse_mouvements" and not args.symbol:
-        logger.error("--symbol is required when --site richbourse_mouvements (e.g. --symbol NTLC)")
+    if args.site == "richbourse_timeseries" and not args.symbol:
+        logger.error("--symbol is required when --site richbourse_timeseries (e.g. --symbol NTLC)")
         return 1
 
     sites = list(SCRAPERS) if args.site == "all" else [args.site]
     for name in sites:
-        if name == "richbourse_mouvements" and not args.symbol:
+        if name == "richbourse_timeseries" and not args.symbol:
             continue
         ScraperCls, url = SCRAPERS[name]
-        display_url = f"{url}/{args.symbol}" if name == "richbourse_mouvements" and args.symbol else url
+        display_url = f"{url}/{args.symbol}" if name == "richbourse_timeseries" and args.symbol else url
         extra = f", period={args.period}" if name == "sikafinance" else (
             f", period={args.period}, progression={args.progression}" if name == "richbourse" else (
-                f", symbol={args.symbol}" if name == "richbourse_mouvements" else ""
+                f", symbol={args.symbol}" if name == "richbourse_timeseries" else ""
             )
         )
         logger.info("Scraping %s (%s) (sleep=%.1fs%s)", name, display_url, sleep, extra)
@@ -99,7 +99,7 @@ def main() -> int:
             elif name == "richbourse":
                 kwargs["period"] = args.period
                 kwargs["progression"] = args.progression
-            elif name == "richbourse_mouvements":
+            elif name == "richbourse_timeseries":
                 kwargs["symbol"] = args.symbol or "NTLC"
             scraper = ScraperCls(**kwargs)
             data = scraper.scrape()
@@ -144,13 +144,17 @@ def _summary(data: dict, site: str) -> str:
         if data.get("progression"):
             parts.append(f"progression={data['progression']}")
         return ", ".join(parts) if parts else "no structured data"
-    if site == "richbourse_mouvements":
+    if site == "richbourse_timeseries":
+        if data.get("error"):
+            return f"error={data['error']}"
         parts = []
-        if data.get("symbol"):
-            parts.append(f"symbol={data['symbol']}")
-        n = len(data.get("panels") or [])
-        parts.append(f"panels={n}")
-        return ", ".join(parts) if parts else "no structured data"
+        if data.get("csv_path"):
+            parts.append(f"csv={data['csv_path']}")
+        if data.get("date_range"):
+            parts.append(f"range={' to '.join(data['date_range'])}")
+        if data.get("rows") is not None:
+            parts.append(f"rows={data['rows']}")
+        return ", ".join(parts) if parts else "no data"
     if site == "brvm":
         parts = []
         if data.get("indices"):
