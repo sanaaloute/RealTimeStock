@@ -1,0 +1,23 @@
+# RealTimeStock: Telegram bot. Ollama must be running (host or ollama service).
+services:
+  bot:
+    build: .
+    env_file: .env
+    # Point to Ollama: host.docker.internal = host machine (Linux needs extra_hosts below)
+    environment:
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  # Optional: run Ollama inside Docker (then set OLLAMA_BASE_URL=http://ollama:11434 for bot)
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   restart: unless-stopped
+
+# volumes:
+#   ollama_data:

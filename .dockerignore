@@ -1,0 +1,38 @@
+# Env and secrets (mount or pass at run)
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*.pyo
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+.eggs/
+
+# IDE and OS
+.idea/
+.vscode/
+.cursor/
+.DS_Store
+Thumbs.db
+
+# Playwright and test
+playwright-report/
+test-results/
+.blob-storage/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Optional: exclude data so it’s mounted fresh (or keep for cache)
+# data/
