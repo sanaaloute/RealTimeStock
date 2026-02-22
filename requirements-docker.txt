@@ -1,0 +1,18 @@
+# Docker build: no playwright (base image has it). Pinned versions to avoid pydantic/pydantic-core conflicts.
+tavily-python
+python-dotenv
+beautifulsoup4
+requests
+# Agent stack: exact pins for resolvable set (langgraph 0.2.x + pydantic 2.9 + chromadb 0.4)
+pydantic
+langchain-core
+langchain-ollama
+langgraph
+chromadb
+# Charts
+matplotlib
+# Telegram bot
+python-telegram-bot
+# Voice to text
+SpeechRecognition
+pydub
