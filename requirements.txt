@@ -14,3 +14,6 @@ matplotlib>=3.7.0
 
 # Telegram bot
 python-telegram-bot>=21.0
+# Voice to text (optional: install ffmpeg for ogg/mp3 support)
+SpeechRecognition>=3.10.0
+pydub>=0.25.0

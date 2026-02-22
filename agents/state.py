@@ -15,3 +15,5 @@ class AgentState(TypedDict, total=False):
     # NLU: extracted intent + entities for downstream workers; or clarification question for the user.
     structured_data: dict[str, Any] | None  # intent, entities, suggested_worker when clear.
     clarification: str | None  # When set, NLU asks user to clarify; bot returns this and ends.
+    # Summarize memory: condensed summary of older conversation when message count is high.
+    conversation_summary: str | None

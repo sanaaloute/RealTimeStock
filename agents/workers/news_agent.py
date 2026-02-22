@@ -17,20 +17,27 @@ NEWS_TOOLS = [
     get_brvm_announcements_tool,
 ]
 
-NEWS_AGENT_SYSTEM = """You are a BRVM (Bourse Régionale des Valeurs Mobilières) news assistant. Your answers must be grounded only in the data returned by the tools you call.
+def get_news_agent_system() -> str:
+    """News agent system prompt with current time injected."""
+    from agents.utils import get_time_prefix
+    return f"""You are the BRVM news worker. You answer only from data returned by your tools. Do not invent or assume any fact not present in tool results.
 
-Rules:
-- Use get_company_news(symbol) to fetch latest news for a specific BRVM company (Rich Bourse).
-- Use get_market_news() to fetch general BRVM market news (Sika Finance - ACTUALITES DE LA BOURSE).
-- Use get_brvm_announcements(company=...) to fetch official BRVM announcements (convocations AGO, PDF links).
-- Base your reply only on the tool results. Summarize or list the news clearly (date, title, source, link when available).
-- If a tool returns an error or no items, say so clearly: e.g. "I could not find news for that company" or "No announcements match your request."
-- If the user asks about something you have not fetched (e.g. a company not in the tool results), do not invent information. Say you don't have that information or suggest they ask for a specific company or topic.
-- Do not mention tool names, file paths, or internal details in your final answer.
-- All amounts are in F CFA when relevant."""
+**{get_time_prefix()}**
+
+**Tools:**
+- get_company_news(symbol): Rich Bourse news for one BRVM company. Call with the exact symbol (e.g. NTLC, SLBC).
+- get_market_news(): Sika Finance — "ACTUALITES DE LA BOURSE" (general BRVM market news).
+- get_brvm_announcements(company=...): Official BRVM announcements (convocations, AGO, etc.) with PDF links when available.
+
+**Rules:**
+1. Call the relevant tool(s) first. Base your reply strictly on the returned items.
+2. Present news as a clear list or summary: date, title, source. Include links when the tool provides them.
+3. If a tool returns an error or empty list: say so plainly (e.g. "No news found for that company" or "No announcements match your request").
+4. If the user asks about a company or topic you did not fetch: do not invent. Say you do not have that information or suggest they ask for a specific company.
+5. Do not mention tool names, file paths, or internal implementation in your answer. All amounts in F CFA when relevant."""
 
 
-def create_news_agent(model: str = "gpt-oss"):
+def create_news_agent(model: str = "qwen3:8b"):
     """Build ReAct agent with news tools. System prompt is prepended in the graph node."""
     kwargs = {"model": model, "temperature": 0}
     if config.OLLAMA_BASE_URL:

@@ -1,8 +1,9 @@
-"""Telegram bot: forwards messages to the master agent; only allowed users."""
+"""Telegram bot: forwards messages to the master agent; only allowed users. Accepts text or voice/audio."""
 from __future__ import annotations
 
 import asyncio
 import logging
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -13,11 +14,13 @@ from telegram.request import HTTPXRequest
 import config
 from agents import run_agent
 from .redact import redact_for_telegram
+from .voice_to_text import voice_to_text
 
 logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_LENGTH = 4096  # Telegram limit
 MAX_CAPTION_LENGTH = 1024  # Telegram photo caption limit
+VOICE_LANGUAGE = "fr-FR"  # BRVM / West Africa; use "en-US" for English
 
 
 def _is_allowed(user_id: int) -> bool:
@@ -40,8 +43,43 @@ def _extract_reply(messages: list[Any]) -> str:
     return "No answer from the agent."
 
 
+async def _get_query_from_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str | None:
+    """Extract query from text, or from voice/audio by converting to text. Returns None if nothing to process."""
+    msg = update.message
+    if not msg:
+        return None
+    # Text
+    if msg.text:
+        return msg.text.strip() or None
+    # Voice or audio: download and transcribe
+    voice = getattr(msg, "voice", None)
+    audio = getattr(msg, "audio", None)
+    file_id = None
+    suffix = ".ogg"
+    if voice:
+        file_id = voice.file_id
+    elif audio:
+        file_id = audio.file_id
+        suffix = ".m4a"  # Telegram audio often m4a
+    if not file_id:
+        return None
+    try:
+        tg_file = await context.bot.get_file(file_id)
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+            await tg_file.download_to_drive(f.name)
+            path = Path(f.name)
+        try:
+            text = await asyncio.to_thread(voice_to_text, path, VOICE_LANGUAGE)
+            return (text or "").strip() or None
+        finally:
+            path.unlink(missing_ok=True)
+    except Exception as e:
+        logger.warning("Voice/audio download or transcription failed: %s", e)
+        return None
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not update.message or not update.message.text:
+    if not update.message:
         return
     user = update.effective_user
     if not user:
@@ -52,17 +90,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.warning("Unauthorized user %s (%s)", user_id, getattr(user, "username", ""))
         return
 
-    query = update.message.text.strip()
+    query = await _get_query_from_message(update, context)
     if not query:
-        await update.message.reply_text("Send a question about BRVM stocks (e.g. price of NTLC, compare two stocks).")
+        await update.message.reply_text(
+            "Send a text message or a voice note with your question (e.g. price of NTLC, compare two stocks). "
+            "If you sent voice and this appears, the audio could not be transcribed."
+        )
         return
 
     status = await update.message.reply_text("Thinking…")
     try:
+        # thread_id enables conversation memory (summarize memory) per chat
+        thread_id = str(update.effective_chat.id) if update.effective_chat else str(user_id)
         result = await asyncio.to_thread(
             run_agent,
             query,
             model=config.OLLAMA_MODEL,
+            thread_id=thread_id,
         )
         # If NLU asked for clarification, return that as the reply
         clarification = result.get("clarification")
@@ -114,5 +158,11 @@ def build_application() -> Application:
         .request(request)
     )
     app = builder.build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Text, voice messages, or audio files
+    app.add_handler(
+        MessageHandler(
+            (filters.TEXT & ~filters.COMMAND) | filters.VOICE | filters.AUDIO,
+            handle_message,
+        )
+    )
     return app

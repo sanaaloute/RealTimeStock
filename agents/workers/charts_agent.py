@@ -9,7 +9,18 @@ from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 
 import config
+from agents.utils import get_time_prefix
 from ..tools.stock_tools import get_timeseries_tool, plot_company_chart_tool
+
+
+def get_charts_agent_system() -> str:
+    """System prompt for the charts worker."""
+    return f"""You are the BRVM charts worker. You produce a price chart (line or area) for a BRVM stock over a date range. You must call get_timeseries_tool if needed, then plot_company_chart_tool to generate the image.
+
+**{get_time_prefix()}**
+
+**Tools:** get_timeseries_tool (fetch time series for symbol and dates), plot_company_chart_tool (symbol, start_date, end_date, chart_type=line|area). Always produce the chart when the user asked for a graph/plot; the tool returns an image path that the system will send to the user. Do not mention the image path or file system in your final reply; just confirm the chart and briefly describe what it shows. All amounts in F CFA."""
+
 
 CHARTS_TOOLS = [
     get_timeseries_tool,
@@ -35,7 +46,7 @@ def _extract_image_path_from_messages(messages: list) -> str | None:
     return None
 
 
-def create_charts_agent(model: str = "gpt-oss"):
+def create_charts_agent(model: str = "qwen3:8b"):
     """Build ReAct agent with get_timeseries and plot_company_chart (returns image path in tool result)."""
     kwargs = {"model": model, "temperature": 0}
     if config.OLLAMA_BASE_URL:

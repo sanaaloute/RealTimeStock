@@ -22,11 +22,11 @@ python run_scrapers.py --json             # JSON output
 **Sites:** `sikafinance` · `richbourse` · `richbourse_timeseries` (requires `--symbol`, writes CSV to `data/series/`) · `brvm`
 
 **Agent (LangGraph + Ollama)**  
-Master agent coordinates two workers: *scraper* (fetch palmarès, variation, timeseries, BRVM) and *analytics* (metrics, comparison, stats). Requires Ollama (e.g. `ollama run gpt-oss`).
+Master agent coordinates two workers: *scraper* (fetch palmarès, variation, timeseries, BRVM) and *analytics* (metrics, comparison, stats). Requires Ollama (e.g. `ollama run qwen3:8b`).
 
 ```bash
 python run_agent.py "What is the current price of NTLC?"
-python run_agent.py "Compare NTLC and SLBC" --model gpt-oss
+python run_agent.py "Compare NTLC and SLBC" --model qwen3:8b
 ```
 
 **Telegram bot**  
@@ -44,17 +44,23 @@ python run_telegram_bot.py
 Then send a message to your bot (e.g. “What is the current price of NTLC?”).
 
 **Docker**  
-Run the Telegram bot in a container. Ollama must be reachable (on the host or in another container).
+Build and run the Telegram bot (and optionally Ollama) with Docker Compose.
 
-1. Copy `.env.example` to `.env` and set `TELEGRAM_BOT_TOKEN`, `ALLOWED_TELEGRAM_IDS`. Optionally set `OLLAMA_BASE_URL` (default in compose: `http://host.docker.internal:11434`).
-2. Start Ollama on the host (e.g. `ollama run gpt-oss`).
+1. Copy `.env.example` to `.env` and set `TELEGRAM_BOT_TOKEN` and `ALLOWED_TELEGRAM_IDS`.
+2. **Ollama:** either run Ollama on the host and set in `.env`:  
+   `OLLAMA_BASE_URL=http://host.docker.internal:11434`  
+   or use the Compose Ollama service and set:  
+   `OLLAMA_BASE_URL=http://ollama:11434`
 3. Build and run:
 
 ```bash
-docker compose up -d --build
+docker compose build
+docker compose up -d bot          # bot only (Ollama on host)
+# or
+docker compose up -d              # bot + ollama (then: docker compose exec ollama ollama pull qwen3:8b)
 ```
 
-To use a different Ollama URL (e.g. same host): `OLLAMA_BASE_URL=http://host.docker.internal:11434 docker compose up -d`.
+Time series CSVs are stored in a Docker volume (`bot_data`). For voice messages in the bot, uncomment the ffmpeg line in the Dockerfile and rebuild (requires apt to be available in the image).
 
 **Troubleshooting – `telegram.error.NetworkError: httpx.ConnectError`**  
 The container cannot reach Telegram’s API (api.telegram.org). Try:
