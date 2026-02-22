@@ -12,8 +12,8 @@ chromadb>=0.4.0
 # Charts
 matplotlib>=3.7.0
 
-# Telegram bot
-python-telegram-bot>=21.0
+# Telegram bot (job-queue for price target alerts)
+python-telegram-bot[job-queue]>=21.0
 # Voice to text (optional: install ffmpeg for ogg/mp3 support)
 SpeechRecognition>=3.10.0
 pydub>=0.25.0

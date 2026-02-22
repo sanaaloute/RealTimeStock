@@ -17,9 +17,6 @@ services:
   # In .env set: OLLAMA_BASE_URL=http://ollama:11434
   ollama:
     image: ollama/ollama:latest
-    environment:
-      - HTTP_PROXY=http://host.docker.internal:29758
-      - HTTPS_PROXY=http://host.docker.internal:29758
     ports:
       - "11434:11434"
     volumes:

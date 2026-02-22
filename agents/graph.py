@@ -1,6 +1,7 @@
-"""LangGraph: NLU -> supervisor -> (scraper | analytics | timeseries | charts); workers -> supervisor."""
+"""LangGraph: NLU -> supervisor -> (scraper | analytics | timeseries | charts | portfolio); workers -> supervisor."""
 from __future__ import annotations
 
+import inspect
 from typing import Callable, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -17,6 +18,7 @@ from agents.workers.news_agent import create_news_agent, get_news_agent_system
 from agents.workers.nlu_agent import create_nlu_node
 from agents.workers.scraper_agent import create_scraper_agent, get_scraper_agent_system
 from agents.workers.timeseries_agent import create_timeseries_agent, get_timeseries_agent_system
+from agents.workers.portfolio_agent import create_portfolio_agent, get_portfolio_agent_system
 
 # When message count exceeds this, we summarize older messages and keep recent ones
 MEMORY_SUMMARY_THRESHOLD = 26
@@ -35,9 +37,10 @@ SUPERVISOR_SYSTEM_TEMPLATE = """You are the routing coordinator for the BRVM (Bo
 - **TIMESERIES** — User asks to check, update, or refresh company CSV files; list which CSVs exist; or run the "daily update" for time series data. Use only for CSV lifecycle operations, not for answering a price or comparison question.
 - **CHARTS** — User asks for a chart, graph, or plot of a stock's price over a period (line or area). Use when a visual (image) is requested; the worker returns an image you must pass to the user with a short explanation.
 - **NEWS** — User asks for news, actualités, announcements, or latest information about a BRVM company or the BRVM market. Use for any news-like request; the worker fetches from Rich Bourse, Sika Finance, and BRVM official announcements.
+- **PORTFOLIO** — User asks about or wants to change their portfolio (show portfolio, add/remove position, portfolio growth/loss), their tracking list (add/remove symbol), or price alerts (set target, list/remove alerts). Use for "my portfolio", "add NTLC to portfolio", "track SLBC", "notify me when NTLC hits 55000", "remove NTLC from portfolio".
 - **FINISH** — The user's question has been fully answered by a previous worker reply, or the message is a greeting/thanks/off-topic and no tool is needed.
 
-**Output rule:** Reply with exactly one word: SCRAPER | ANALYTICS | TIMESERIES | CHARTS | NEWS | FINISH."""
+**Output rule:** Reply with exactly one word: SCRAPER | ANALYTICS | TIMESERIES | CHARTS | NEWS | PORTFOLIO | FINISH."""
 
 
 def _get_supervisor_system() -> str:
@@ -56,6 +59,8 @@ def _parse_next(response: str) -> NextWorker:
         return "charts"
     if "NEWS" in text:
         return "news"
+    if "PORTFOLIO" in text:
+        return "portfolio"
     return "FINISH"
 
 
@@ -128,7 +133,17 @@ def _build_worker_node(
         summary = state.get("conversation_summary") or ""
         time_line = get_time_prefix()
         if prepend_system:
-            system_content = prepend_system() if callable(prepend_system) else prepend_system
+            if callable(prepend_system):
+                try:
+                    sig = inspect.signature(prepend_system)
+                    if len(sig.parameters) >= 1:
+                        system_content = prepend_system(state)
+                    else:
+                        system_content = prepend_system()
+                except Exception:
+                    system_content = prepend_system()
+            else:
+                system_content = prepend_system
             if summary:
                 system_content = f"Conversation summary (context):\n{summary}\n\n{system_content}"
             messages = [SystemMessage(content=system_content)] + list(messages)
@@ -159,7 +174,7 @@ def route_after_nlu(state: AgentState) -> Literal["supervisor", "__end__"]:
 
 def route_after_supervisor(
     state: AgentState,
-) -> Literal["scraper", "analytics", "timeseries", "charts", "news", "__end__"]:
+) -> Literal["scraper", "analytics", "timeseries", "charts", "news", "portfolio", "__end__"]:
     next_ = state.get("next") or "FINISH"
     if next_ == "scraper":
         return "scraper"
@@ -171,6 +186,8 @@ def route_after_supervisor(
         return "charts"
     if next_ == "news":
         return "news"
+    if next_ == "portfolio":
+        return "portfolio"
     return "__end__"
 
 
@@ -186,6 +203,10 @@ def create_master_graph(model: str = "qwen3:8b") -> "CompiledStateGraph":
     builder.add_node("charts", _build_worker_node(create_charts_agent, model, extract_image_path=True, prepend_system=get_charts_agent_system))
     builder.add_node("news", _build_worker_node(create_news_agent, model, prepend_system=get_news_agent_system))
 
+    def _portfolio_system(state: AgentState) -> str:
+        return get_portfolio_agent_system(state.get("telegram_user_id") or 0)
+    builder.add_node("portfolio", _build_worker_node(create_portfolio_agent, model, prepend_system=_portfolio_system))
+
     builder.set_entry_point("nlu")
     builder.add_conditional_edges("nlu", route_after_nlu)
     builder.add_conditional_edges("supervisor", route_after_supervisor)
@@ -194,14 +215,21 @@ def create_master_graph(model: str = "qwen3:8b") -> "CompiledStateGraph":
     builder.add_edge("timeseries", "supervisor")
     builder.add_edge("charts", "supervisor")
     builder.add_edge("news", "supervisor")
+    builder.add_edge("portfolio", "supervisor")
 
     memory = MemorySaver()
     return builder.compile(checkpointer=memory)
 
 
-def run_agent(query: str, model: str = "qwen3:8b", thread_id: str | None = None) -> dict:
+def run_agent(
+    query: str,
+    model: str = "qwen3:8b",
+    thread_id: str | None = None,
+    telegram_user_id: int | None = None,
+) -> dict:
     """Run the master agent on a user query. Returns final state with messages.
-    If thread_id is set, conversation is persisted (summarize memory) across calls."""
+    If thread_id is set, conversation is persisted (summarize memory) across calls.
+    telegram_user_id is passed to portfolio/tracking/target tools when the user manages portfolio or alerts."""
     graph = create_master_graph(model=model)
     run_config = {"configurable": {"thread_id": thread_id or "default"}}
     # Append new message to existing conversation when using memory
@@ -209,4 +237,6 @@ def run_agent(query: str, model: str = "qwen3:8b", thread_id: str | None = None)
     existing = (current.values or {}).get("messages") or []
     messages = list(existing) + [HumanMessage(content=query)]
     initial: AgentState = {"messages": messages}
+    if telegram_user_id is not None:
+        initial["telegram_user_id"] = telegram_user_id
     return graph.invoke(initial, config=run_config)

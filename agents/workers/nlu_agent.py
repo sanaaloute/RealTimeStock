@@ -38,6 +38,16 @@ Valid BRVM companies (symbol: company name):
 - metrics: statistics over a period (average, median, min, max). Requires: symbol. Optional: start_date, end_date.
 - news: latest news/actualités/announcements about a BRVM company or the market. Optional: symbol.
 - brvm_basics: what is BRVM, how to invest on BRVM, how does BRVM work. No required entities.
+- portfolio_display: show my portfolio, my portfolio, list portfolio. No required entities.
+- portfolio_summary: portfolio growth, portfolio loss, how is my portfolio doing. No required entities.
+- portfolio_add: add stock to portfolio (e.g. I bought NTLC at 50000 on 2025-01-15). Requires: symbol, buy_price, buy_date. Optional: quantity.
+- portfolio_remove: remove a stock from my portfolio. Requires: symbol.
+- tracking_list: show my tracking list, what am I tracking. No required entities.
+- tracking_add: add symbol to tracking list. Requires: symbol.
+- tracking_remove: remove symbol from tracking. Requires: symbol.
+- target_set: set price alert, notify when symbol reaches price (e.g. notify me when NTLC hits 55000). Requires: symbol, target_price. Optional: direction (above/below).
+- target_list: show my alerts, my price targets. No required entities.
+- target_remove: remove alert for a symbol. Requires: symbol.
 - general: other BRVM-related question; no specific params.
 
 **Entities:** symbol, symbol_a, symbol_b must be the official SYMBOL from the list (e.g. Nestlé → NTLC, Solibra → SLBC). Dates in YYYY-MM-DD. period: e.g. "1W", "1M", "1Y". chart_type: "line" or "area".
@@ -48,9 +58,9 @@ A) Unclear / missing info / company not in list / user asks about another exchan
 CLARIFY: <Short question in the user's language. Ask for the missing detail or say we only cover BRVM.>
 
 B) Clear intent, all companies in list (if any) → single JSON, no other text:
-{{"intent": "<intent>", "entities": {{"symbol": "<SYMBOL>", ...}}, "suggested_worker": "<analytics|scraper|charts|timeseries|news>"}}
+{{"intent": "<intent>", "entities": {{"symbol": "<SYMBOL>", ...}}, "suggested_worker": "<analytics|scraper|charts|timeseries|news|portfolio>"}}
 
-**Worker mapping:** market_overview, price_query, compare, metrics, brvm_basics, general → analytics. chart → charts. update_timeseries → timeseries. scrape → scraper. news → news.
+**Worker mapping:** market_overview, price_query, compare, metrics, brvm_basics, general → analytics. chart → charts. update_timeseries → timeseries. scrape → scraper. news → news. portfolio_display, portfolio_summary, portfolio_add, portfolio_remove, tracking_list, tracking_add, tracking_remove, target_set, target_list, target_remove → portfolio.
 
 Reply only with CLARIFY: ... or the JSON object."""
 

@@ -53,3 +53,6 @@ Thumbs.db
 htmlcov/
 .mypy_cache/
 *.log
+
+# Bot user data (portfolio, tracking, targets)
+data/brvm_bot.db
