@@ -4,9 +4,10 @@ FROM ${PLAYWRIGHT_IMAGE} AS base
 
 WORKDIR /app
 
-# Install Python deps (playwright already in image; we add project requirements)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python deps (playwright + Chromium already in base image; use requirements-docker to avoid greenlet conflict)
+COPY requirements-docker.txt .
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements-docker.txt
 
 # App and data
 COPY config.py .
