@@ -55,3 +55,13 @@ docker compose up -d --build
 ```
 
 To use a different Ollama URL (e.g. same host): `OLLAMA_BASE_URL=http://host.docker.internal:11434 docker compose up -d`.
+
+**Troubleshooting – `telegram.error.NetworkError: httpx.ConnectError`**  
+The container cannot reach Telegram’s API (api.telegram.org). Try:
+
+1. **Test from the host:** `curl -sI https://api.telegram.org` (should return HTTP/2 200 or 404). If this fails, your network or firewall blocks Telegram.
+2. **Test from the container:**  
+   `docker compose run --rm bot python -c "import httpx; print(httpx.get('https://api.telegram.org', timeout=10).status_code)"`  
+   If this fails but the host test works, Docker has no outbound access (e.g. firewall rules, corporate proxy).
+3. **Run the bot on the host** (without Docker) to confirm the token and network work:  
+   `python run_telegram_bot.py`

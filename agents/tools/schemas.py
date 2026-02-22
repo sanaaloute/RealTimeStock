@@ -75,3 +75,59 @@ class ComputeMetricsInput(BaseModel):
     symbol: str = Field(description="Stock symbol.")
     start_date: str | None = Field(default=None, description="Start date YYYY-MM-DD; omit for full series.")
     end_date: str | None = Field(default=None, description="End date YYYY-MM-DD; omit for full series.")
+
+
+# --- Timeseries CSV updater ---
+class EnsureTimeseriesInput(BaseModel):
+    """Check and update CSV for one company (fetch if missing or stale)."""
+
+    symbol: str = Field(description="Stock symbol (e.g. NTLC, SLBC).")
+
+
+class ListTimeseriesStatusInput(BaseModel):
+    """List status of all company CSVs (path, last_date, up_to_date). Optional symbols to check."""
+
+    symbols: str | None = Field(
+        default=None,
+        description="Comma-separated symbols to check; omit to list all CSVs in data/series.",
+    )
+
+
+class EnsureAllTimeseriesInput(BaseModel):
+    """Update CSVs for all configured target companies (daily job). No args."""
+
+    pass
+
+
+# --- Charts ---
+class PlotCompanyChartInput(BaseModel):
+    """Plot price chart for a company over a date range. Saves image to temp file; path returned."""
+
+    symbol: str = Field(description="Stock symbol.")
+    start_date: str = Field(description="Start date YYYY-MM-DD.")
+    end_date: str = Field(description="End date YYYY-MM-DD.")
+    chart_type: str = Field(
+        default="line",
+        description="Chart type: line or area.",
+    )
+
+
+# --- News (ground truth from Rich Bourse, Sika Finance, BRVM) ---
+class GetCompanyNewsInput(BaseModel):
+    """Get latest news for a BRVM company from Rich Bourse."""
+
+    symbol: str = Field(description="Stock symbol or company name (e.g. PALC, Palm CI).")
+    limit: int = Field(default=10, description="Max number of news items to return.")
+
+
+class GetMarketNewsInput(BaseModel):
+    """Get BRVM market news from Sika Finance (ACTUALITES DE LA BOURSE). No symbol required."""
+
+    limit: int = Field(default=15, description="Max number of news items to return.")
+
+
+class GetBrvmAnnouncementsInput(BaseModel):
+    """Get BRVM official announcements (convocations AGO, PDFs). Optionally filter by company."""
+
+    limit: int = Field(default=15, description="Max number of announcements to return.")
+    company: str | None = Field(default=None, description="Optional: filter by symbol or company name.")
