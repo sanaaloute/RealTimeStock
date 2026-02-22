@@ -33,5 +33,5 @@ TIMESERIES_SYMBOLS: list[str] = [s.strip().upper() for s in _raw_symbols.split("
 ]
 
 # Ollama (agent + redact)
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "").strip() or None

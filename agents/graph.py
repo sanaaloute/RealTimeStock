@@ -1,42 +1,47 @@
 """LangGraph: NLU -> supervisor -> (scraper | analytics | timeseries | charts); workers -> supervisor."""
 from __future__ import annotations
 
-from typing import Literal
+from typing import Callable, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph
+from langgraph.checkpoint.memory import MemorySaver
 
 import config
 from agents.state import AgentState, NextWorker
-from agents.workers.analytics_agent import create_analytics_agent
-from agents.workers.charts_agent import create_charts_agent, _extract_image_path_from_messages
-from agents.workers.news_agent import NEWS_AGENT_SYSTEM, create_news_agent
+from agents.utils import get_time_prefix
+from agents.workers.analytics_agent import create_analytics_agent, get_analytics_agent_system
+from agents.workers.charts_agent import create_charts_agent, _extract_image_path_from_messages, get_charts_agent_system
+from agents.workers.news_agent import create_news_agent, get_news_agent_system
 from agents.workers.nlu_agent import create_nlu_node
-from agents.workers.scraper_agent import create_scraper_agent
-from agents.workers.timeseries_agent import create_timeseries_agent
+from agents.workers.scraper_agent import create_scraper_agent, get_scraper_agent_system
+from agents.workers.timeseries_agent import create_timeseries_agent, get_timeseries_agent_system
 
-SUPERVISOR_SYSTEM = """You are the coordinator for the BRVM market (Bourse Régionale des Valeurs Mobilières). All data is in F CFA (Franc CFA).
+# When message count exceeds this, we summarize older messages and keep recent ones
+MEMORY_SUMMARY_THRESHOLD = 26
+MEMORY_KEEP_RECENT = 12
 
-The user message has been analyzed by NLU. The last message may be "[NLU] intent=..., entities=..., suggested_worker=...". Use that to help route.
+SUPERVISOR_SYSTEM_TEMPLATE = """You are the routing coordinator for the BRVM (Bourse Régionale des Valeurs Mobilières) assistant. This assistant covers only BRVM—do not refer to or route questions about other stock exchanges. All monetary values are in F CFA. Your only task is to output exactly one label from the list below—no explanation, no other text.
 
-You have five workers:
+**{time_line}**
 
-- scraper: fetches raw data (Sika Finance palmarès, Rich Bourse variation, Rich Bourse time series CSV, BRVM official site).
-- analytics: BRVM metrics, comparison, stats, price, time series data, compare stocks, average/median/min/max over a period.
-- timeseries: check if company CSVs exist and are up to date; update one or all company time series CSVs (daily job).
-- charts: plot a company's price over a date range (line or area chart). Returns an image; you must return that image with your explanation.
-- news: latest news about a BRVM company or BRVM market (Rich Bourse, Sika Finance, BRVM official announcements). Ground truth only.
+**Input:** The last assistant message may contain "[NLU] intent=..., entities=..., suggested_worker=...". Use it and the conversation to choose the next step.
 
-Given the user message and any conversation so far, reply with exactly one word:
-- SCRAPER when the user wants to fetch or refresh BRVM data from websites.
-- ANALYTICS when the user wants metrics, comparison, stats, price, or time series (no chart image).
-- TIMESERIES when the user wants to check/update company CSV files or run the daily CSV update.
-- CHARTS when the user wants a chart/graph/plot of a company's price over a period (return image + explanation).
-- NEWS when the user wants news, actualités, announcements, or latest information about a company or the BRVM market.
-- FINISH when the question is fully answered or no tool is needed.
+**Workers (choose exactly one):**
 
-Reply only: SCRAPER or ANALYTICS or TIMESERIES or CHARTS or NEWS or FINISH."""
+- **SCRAPER** — User explicitly asks to fetch, refresh, or pull raw data from BRVM sources: Sika Finance palmarès, Rich Bourse variation, Rich Bourse time series CSV, or BRVM official site. Use only when the request is about obtaining/refreshing source data, not when asking for a computed metric or chart.
+- **ANALYTICS** — User asks for: market overview (most traded stock, top by volume, top gainers/losers); current or historical price, volume, variation; comparison of two or more stocks; statistics (average, median, min, max) over a period; time series numbers without a chart; or what is BRVM / how to invest on BRVM. Use when the answer is numeric, tabular, or FAQ about BRVM—not a plot.
+- **TIMESERIES** — User asks to check, update, or refresh company CSV files; list which CSVs exist; or run the "daily update" for time series data. Use only for CSV lifecycle operations, not for answering a price or comparison question.
+- **CHARTS** — User asks for a chart, graph, or plot of a stock's price over a period (line or area). Use when a visual (image) is requested; the worker returns an image you must pass to the user with a short explanation.
+- **NEWS** — User asks for news, actualités, announcements, or latest information about a BRVM company or the BRVM market. Use for any news-like request; the worker fetches from Rich Bourse, Sika Finance, and BRVM official announcements.
+- **FINISH** — The user's question has been fully answered by a previous worker reply, or the message is a greeting/thanks/off-topic and no tool is needed.
+
+**Output rule:** Reply with exactly one word: SCRAPER | ANALYTICS | TIMESERIES | CHARTS | NEWS | FINISH."""
+
+
+def _get_supervisor_system() -> str:
+    return SUPERVISOR_SYSTEM_TEMPLATE.format(time_line=get_time_prefix())
 
 
 def _parse_next(response: str) -> NextWorker:
@@ -54,6 +59,29 @@ def _parse_next(response: str) -> NextWorker:
     return "FINISH"
 
 
+def _summarize_messages(messages: list, model: str) -> str:
+    """Condense a list of messages into a short summary for memory."""
+    if not messages:
+        return ""
+    from langchain_core.messages import messages_to_str
+    kwargs = {"model": model, "temperature": 0}
+    if config.OLLAMA_BASE_URL:
+        kwargs["base_url"] = config.OLLAMA_BASE_URL
+    llm = ChatOllama(**kwargs)
+    text = messages_to_str(messages)[:8000]
+    prompt = f"""Summarize this BRVM stock market conversation in 2–4 short sentences. Include: stock symbols mentioned (e.g. NTLC, SLBC), what the user asked for, and key facts (prices, dates, comparisons). Omit tool names, file paths, and internal implementation details.
+
+Conversation:
+{text}
+
+Summary:"""
+    try:
+        out = llm.invoke([HumanMessage(content=prompt)])
+        return (getattr(out, "content", None) or str(out)).strip() or "Previous conversation."
+    except Exception:
+        return "Previous conversation."
+
+
 def _build_supervisor_node(model: str):
     kwargs = {"model": model, "temperature": 0}
     if config.OLLAMA_BASE_URL:
@@ -62,29 +90,54 @@ def _build_supervisor_node(model: str):
 
     def supervisor(state: AgentState) -> dict:
         messages = state.get("messages") or []
+        summary = state.get("conversation_summary") or ""
+        # Summarize memory: if too many messages, condense older part and keep recent
+        if len(messages) > MEMORY_SUMMARY_THRESHOLD:
+            to_summarize = messages[:-MEMORY_KEEP_RECENT]
+            new_summary = _summarize_messages(to_summarize, model)
+            summary = f"{summary}\n{new_summary}".strip() if summary else new_summary
+            messages = list(messages[-MEMORY_KEEP_RECENT:])
         if not messages:
-            return {"messages": messages, "next": "FINISH"}
-        prompt = (
-            SystemMessage(content=SUPERVISOR_SYSTEM)
-            if not any(isinstance(m, SystemMessage) for m in messages)
-            else None
-        )
-        to_send = ([prompt] if prompt else []) + list(messages)
+            return {"messages": messages, "next": "FINISH", "conversation_summary": summary}
+        time_system = _get_supervisor_system()
+        system_content = time_system
+        if summary:
+            system_content = f"{time_system}\n\nConversation summary (context):\n{summary}"
+        to_send = [SystemMessage(content=system_content)] + list(messages)
         reply = llm.invoke(to_send)
         content = reply.content if hasattr(reply, "content") else str(reply)
         next_worker = _parse_next(content)
-        return {"messages": messages, "next": next_worker}
+        out: dict = {"messages": messages, "next": next_worker}
+        if summary:
+            out["conversation_summary"] = summary
+        return out
 
     return supervisor
 
 
-def _build_worker_node(agent_builder, model: str, extract_image_path: bool = False, prepend_system: str | None = None):
+def _build_worker_node(
+    agent_builder,
+    model: str,
+    extract_image_path: bool = False,
+    prepend_system: str | None | Callable[[], str] = None,
+):
     agent = agent_builder(model=model)
 
     def node(state: AgentState) -> dict:
         messages = state.get("messages") or []
+        summary = state.get("conversation_summary") or ""
+        time_line = get_time_prefix()
         if prepend_system:
-            messages = [SystemMessage(content=prepend_system)] + list(messages)
+            system_content = prepend_system() if callable(prepend_system) else prepend_system
+            if summary:
+                system_content = f"Conversation summary (context):\n{summary}\n\n{system_content}"
+            messages = [SystemMessage(content=system_content)] + list(messages)
+        else:
+            # Workers without their own system prompt still get current time (and optional summary)
+            prefix = time_line
+            if summary:
+                prefix = f"Conversation summary:\n{summary}\n\n{prefix}"
+            messages = [SystemMessage(content=prefix)] + list(messages)
         result = agent.invoke({"messages": messages})
         out_messages = result.get("messages", messages)
         out: dict = {"messages": out_messages, "next": "FINISH"}
@@ -121,17 +174,17 @@ def route_after_supervisor(
     return "__end__"
 
 
-def create_master_graph(model: str = "gpt-oss") -> "CompiledStateGraph":
+def create_master_graph(model: str = "qwen3:8b") -> "CompiledStateGraph":
     """Build the graph: NLU (entry) -> supervisor -> (scraper | analytics | timeseries | charts | END); workers -> supervisor."""
     builder = StateGraph(AgentState)
 
     builder.add_node("nlu", create_nlu_node(model))
     builder.add_node("supervisor", _build_supervisor_node(model))
-    builder.add_node("scraper", _build_worker_node(create_scraper_agent, model))
-    builder.add_node("analytics", _build_worker_node(create_analytics_agent, model))
-    builder.add_node("timeseries", _build_worker_node(create_timeseries_agent, model))
-    builder.add_node("charts", _build_worker_node(create_charts_agent, model, extract_image_path=True))
-    builder.add_node("news", _build_worker_node(create_news_agent, model, prepend_system=NEWS_AGENT_SYSTEM))
+    builder.add_node("scraper", _build_worker_node(create_scraper_agent, model, prepend_system=get_scraper_agent_system))
+    builder.add_node("analytics", _build_worker_node(create_analytics_agent, model, prepend_system=get_analytics_agent_system))
+    builder.add_node("timeseries", _build_worker_node(create_timeseries_agent, model, prepend_system=get_timeseries_agent_system))
+    builder.add_node("charts", _build_worker_node(create_charts_agent, model, extract_image_path=True, prepend_system=get_charts_agent_system))
+    builder.add_node("news", _build_worker_node(create_news_agent, model, prepend_system=get_news_agent_system))
 
     builder.set_entry_point("nlu")
     builder.add_conditional_edges("nlu", route_after_nlu)
@@ -142,11 +195,18 @@ def create_master_graph(model: str = "gpt-oss") -> "CompiledStateGraph":
     builder.add_edge("charts", "supervisor")
     builder.add_edge("news", "supervisor")
 
-    return builder.compile()
+    memory = MemorySaver()
+    return builder.compile(checkpointer=memory)
 
 
-def run_agent(query: str, model: str = "gpt-oss") -> dict:
-    """Run the master agent on a user query. Returns final state with messages."""
+def run_agent(query: str, model: str = "qwen3:8b", thread_id: str | None = None) -> dict:
+    """Run the master agent on a user query. Returns final state with messages.
+    If thread_id is set, conversation is persisted (summarize memory) across calls."""
     graph = create_master_graph(model=model)
-    initial: AgentState = {"messages": [HumanMessage(content=query)]}
-    return graph.invoke(initial)
+    run_config = {"configurable": {"thread_id": thread_id or "default"}}
+    # Append new message to existing conversation when using memory
+    current = graph.get_state(run_config)
+    existing = (current.values or {}).get("messages") or []
+    messages = list(existing) + [HumanMessage(content=query)]
+    initial: AgentState = {"messages": messages}
+    return graph.invoke(initial, config=run_config)

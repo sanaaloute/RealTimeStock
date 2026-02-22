@@ -19,6 +19,8 @@ from services.news import (
     get_market_news as get_market_news_svc,
 )
 from services.plots import plot_timeseries as plot_timeseries_service
+from services.market_overview import get_brvm_market_overview
+from services.brvm_basics import get_brvm_basics
 
 import config
 from .schemas import (
@@ -27,11 +29,13 @@ from .schemas import (
     EnsureAllTimeseriesInput,
     EnsureTimeseriesInput,
     GetBrvmAnnouncementsInput,
+    GetBrvmBasicsInput,
     GetCompanyNewsInput,
     GetMarketNewsInput,
     GetStockMetricsInput,
     GetTimeseriesInput,
     ListTimeseriesStatusInput,
+    GetMarketOverviewInput,
     PlotCompanyChartInput,
     ScrapeBrvmInput,
     ScrapeRichbourseInput,
@@ -124,6 +128,15 @@ def _get_market_news(limit: int = 15) -> str:
 def _get_brvm_announcements(limit: int = 15, company: str | None = None) -> str:
     data = get_brvm_official_announcements(limit=limit, company=company)
     return json.dumps(data, ensure_ascii=False, default=str)
+
+
+def _get_market_overview(top_n: int = 10) -> str:
+    data = get_brvm_market_overview(top_n=top_n)
+    return json.dumps(data, ensure_ascii=False, default=str)
+
+
+def _get_brvm_basics() -> str:
+    return get_brvm_basics()
 
 
 def _plot_company_chart(
@@ -234,6 +247,14 @@ def _run_get_brvm_announcements(limit: int = 15, company: str | None = None, **k
     return _get_brvm_announcements(limit, company)
 
 
+def _run_get_market_overview(top_n: int = 10, **kwargs: Any) -> str:
+    return _get_market_overview(top_n)
+
+
+def _run_get_brvm_basics(**kwargs: Any) -> str:
+    return _get_brvm_basics()
+
+
 scrape_sikafinance = StructuredTool.from_function(
     func=_run_sikafinance,
     name="scrape_sikafinance",
@@ -337,4 +358,18 @@ get_brvm_announcements_tool = StructuredTool.from_function(
     name="get_brvm_announcements",
     description="Get BRVM official announcements (convocations AGO, etc.) with PDF download links. Optionally filter by company symbol or name.",
     args_schema=GetBrvmAnnouncementsInput,
+)
+
+get_market_overview_tool = StructuredTool.from_function(
+    func=_run_get_market_overview,
+    name="get_market_overview",
+    description="Get BRVM market overview: most traded stocks (top by volume), top gainers, top losers. Use this for questions like 'most traded stock', 'highest volume', 'top performers'. Returns only BRVM-listed symbols. All amounts in F CFA.",
+    args_schema=GetMarketOverviewInput,
+)
+
+get_brvm_basics_tool = StructuredTool.from_function(
+    func=_run_get_brvm_basics,
+    name="get_brvm_basics",
+    description="Get short text about BRVM (what it is, how to invest on BRVM). Use for questions like 'what is BRVM', 'how to invest in BRVM', 'how does the BRVM work'.",
+    args_schema=GetBrvmBasicsInput,
 )

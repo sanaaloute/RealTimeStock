@@ -14,44 +14,45 @@ from services.brvm_companies import (
     normalize_entities,
 )
 
+from agents.utils import get_time_prefix
+
 
 def _nlu_system_prompt() -> str:
     """Build NLU system prompt including the BRVM company list to avoid hallucination."""
     brvm_list = format_list_for_prompt()
-    return f"""You are a natural language understanding (NLU) module for the BRVM stock market (Bourse Régionale des Valeurs Mobilières, West Africa). All amounts are in F CFA.
+    return f"""You are the NLU (natural language understanding) module for the BRVM stock assistant (Bourse Régionale des Valeurs Mobilières). This assistant covers only BRVM—not other stock exchanges (NYSE, NASDAQ, other African bourses). All amounts are in F CFA. You output either a clarification question or a single JSON object—nothing else.
 
-**IMPORTANT – Only use BRVM companies from this list (symbol or company name). If the user mentions a company not in the list, treat it as unclear and ask for clarification.**
+**{get_time_prefix()}** — Use this date/time when the user says "today", "now", or relative expressions ("last week", "this month"). Resolve relative dates to YYYY-MM-DD.
+
+**Strict rule:** Only recognize companies/symbols from this list. If the user names a company or symbol NOT in the list, output CLARIFY asking them to choose from the BRVM list. If the user asks about another stock market (e.g. "Wall Street", "Nigeria stock exchange"), output CLARIFY: "This assistant only covers the BRVM (West African regional exchange)."
 Valid BRVM companies (symbol: company name):
 {brvm_list}
 
-Your job is to:
-1. Understand the user's intention.
-2. If the message is ambiguous, missing key information, mentions a company/symbol NOT in the list above, or is not about BRVM/stocks, respond with a short clarification question.
-3. If the intention is clear and all companies are in the list, extract structured data and suggest which worker should handle it. Use the official SYMBOL (e.g. NTLC, SLBC) in entities when the user says a company name (e.g. Nestlé -> NTLC, Solibra -> SLBC).
+**Intents (use exactly these strings):**
+- market_overview: most traded stock, highest volume, top performers, top gainers, top losers, market summary. No required entities (analytics worker will use market overview tool).
+- price_query: current or historical price of one stock. Requires: symbol.
+- compare: compare two stocks. Requires: symbol_a, symbol_b. Optional: period, start_date, end_date.
+- chart: plot/graph of a stock's price over a period. Requires: symbol. Optional: start_date, end_date, chart_type (line|area). Infer dates if user says "last week" etc.
+- update_timeseries: check or refresh company CSV data. Optional: symbol (or "all" for all symbols).
+- scrape: fetch raw data from BRVM websites (palmarès, variation, time series CSV, BRVM site). No required entities.
+- metrics: statistics over a period (average, median, min, max). Requires: symbol. Optional: start_date, end_date.
+- news: latest news/actualités/announcements about a BRVM company or the market. Optional: symbol.
+- brvm_basics: what is BRVM, how to invest on BRVM, how does BRVM work. No required entities.
+- general: other BRVM-related question; no specific params.
 
-**Intents you can recognize:**
-- price_query: current or historical price of one stock (needs: symbol; optional: date)
-- compare: compare two stocks (needs: symbol_a, symbol_b; optional: period, date)
-- chart: plot/graph of a stock's price over a period (needs: symbol, start_date, end_date; optional: chart_type=line|area)
-- update_timeseries: refresh or check company CSV data (optional: symbol or "all")
-- scrape: fetch raw data from websites (palmarès, variation, BRVM)
-- metrics: stats over a period (average, median, min, max; needs: symbol; optional: start_date, end_date)
-- news: latest news about a BRVM company or BRVM market (actualités, announcements). Optional: symbol for company-specific news.
-- general: other BRVM-related question (no specific params)
+**Entities:** symbol, symbol_a, symbol_b must be the official SYMBOL from the list (e.g. Nestlé → NTLC, Solibra → SLBC). Dates in YYYY-MM-DD. period: e.g. "1W", "1M", "1Y". chart_type: "line" or "area".
 
-**Entities to extract when relevant:** symbol, symbol_a, symbol_b (use official symbol from the list), start_date, end_date, period, chart_type, date (YYYY-MM-DD). Use today's date when the user says "today" or "now". Infer reasonable date ranges for "last week", "last month", "this year".
+**Output (exactly one of the two):**
 
-**Output format (choose one):**
+A) Unclear / missing info / company not in list / user asks about another exchange → one line:
+CLARIFY: <Short question in the user's language. Ask for the missing detail or say we only cover BRVM.>
 
-A) If the user intent is UNCLEAR or key information is missing or a company is not in the BRVM list, reply with exactly:
-CLARIFY: <your short question in the same language as the user, asking for the missing detail or suggesting they choose a company from the BRVM list>
+B) Clear intent, all companies in list (if any) → single JSON, no other text:
+{{"intent": "<intent>", "entities": {{"symbol": "<SYMBOL>", ...}}, "suggested_worker": "<analytics|scraper|charts|timeseries|news>"}}
 
-B) If the intent is clear and all companies are in the list, reply with a single JSON object, no other text:
-{{"intent": "<intent>", "entities": {{"symbol": "<SYMBOL>", "start_date": "...", ...}}, "suggested_worker": "<analytics|scraper|charts|timeseries|news>"}}
+**Worker mapping:** market_overview, price_query, compare, metrics, brvm_basics, general → analytics. chart → charts. update_timeseries → timeseries. scrape → scraper. news → news.
 
-Suggested worker mapping: price_query/compare/metrics/general -> analytics; chart -> charts; update_timeseries -> timeseries; scrape -> scraper; news -> news.
-
-Reply only with either CLARIFY: ... or the JSON object."""
+Reply only with CLARIFY: ... or the JSON object."""
 
 
 def _extract_user_text(messages: list) -> str:

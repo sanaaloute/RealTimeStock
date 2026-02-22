@@ -1,0 +1,33 @@
+services:
+  bot:
+    build: .
+    image: realtimestock-bot:latest
+    env_file: .env
+    # With ollama service below: set in .env: OLLAMA_BASE_URL=http://ollama:11434
+    # With Ollama on host: set in .env: OLLAMA_BASE_URL=http://host.docker.internal:11434
+    volumes:
+      - bot_data:/app/data/series
+    restart: unless-stopped
+
+  # Optional: run Ollama in Docker. Start with: docker compose up -d ollama
+  # Then: docker compose exec ollama ollama pull qwen3:8b
+  # In .env set: OLLAMA_BASE_URL=http://ollama:11434
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # Uncomment to use GPU (nvidia)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  bot_data:
+  ollama_data:

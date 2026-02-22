@@ -1,11 +1,11 @@
 """
 Run the master agent (LangGraph: supervisor + scraper / analytics workers).
 
-Requires Ollama with a model (e.g. ollama run gpt-oss).
+Requires Ollama with a model (e.g. ollama run qwen3:8b).
 
   python run_agent.py "What is the current price of NTLC?"
   python run_agent.py "Compare NTLC and SLBC"
-  python run_agent.py --model gpt-oss "Get Rich Bourse palmarès for last week"
+  python run_agent.py --model qwen3:8b "Get Rich Bourse palmarès for last week"
 """
 import argparse
 import sys
@@ -16,7 +16,7 @@ from agents import run_agent
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run BRVM stock master agent (scraper + analytics workers).")
     parser.add_argument("query", nargs="?", default="", help="User question (or read from stdin).")
-    parser.add_argument("--model", default="gpt-oss", help="Ollama model name (default: gpt-oss).")
+    parser.add_argument("--model", default="qwen3:8b", help="Ollama model name (default: qwen3:8b).")
     args = parser.parse_args()
 
     text = (args.query or "").strip()

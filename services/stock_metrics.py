@@ -5,6 +5,7 @@ from datetime import date, datetime
 from typing import Any
 
 from ._data import fetch_palmares, load_series
+from .brvm_companies import get_valid_symbols
 
 
 def get_stock_metrics(
@@ -29,6 +30,11 @@ def get_stock_metrics(
         "at_time": None,
         "source": "palmares",
     }
+
+    valid = get_valid_symbols()
+    if symbol and symbol not in valid:
+        out["error"] = f"{symbol} is not a listed BRVM symbol. This assistant only covers BRVM (Bourse Régionale des Valeurs Mobilières)."
+        return out
 
     if at_time is None:
         stocks = fetch_palmares(period=period, progression="tout")

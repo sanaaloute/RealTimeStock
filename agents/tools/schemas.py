@@ -131,3 +131,15 @@ class GetBrvmAnnouncementsInput(BaseModel):
 
     limit: int = Field(default=15, description="Max number of announcements to return.")
     company: str | None = Field(default=None, description="Optional: filter by symbol or company name.")
+
+
+class GetMarketOverviewInput(BaseModel):
+    """Get BRVM market overview: top stocks by volume, top gainers, top losers. BRVM-listed only."""
+
+    top_n: int = Field(default=10, description="Number of stocks to return per category (default 10).")
+
+
+class GetBrvmBasicsInput(BaseModel):
+    """Get short BRVM and investing basics (what is BRVM, how to invest). No args."""
+
+    pass
