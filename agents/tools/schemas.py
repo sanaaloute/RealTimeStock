@@ -143,3 +143,75 @@ class GetBrvmBasicsInput(BaseModel):
     """Get short BRVM and investing basics (what is BRVM, how to invest). No args."""
 
     pass
+
+
+# --- Portfolio / tracking / targets (require telegram_id from context) ---
+class PortfolioAddInput(BaseModel):
+    """Add or update a position in the user's portfolio."""
+
+    telegram_id: int = Field(description="User Telegram ID (from context).")
+    symbol: str = Field(description="BRVM symbol (e.g. NTLC, SLBC).")
+    buy_price: float = Field(description="Buy price in F CFA.")
+    buy_date: str = Field(description="Buy date YYYY-MM-DD.")
+    quantity: float = Field(default=1.0, description="Number of shares.")
+
+
+class PortfolioRemoveInput(BaseModel):
+    """Remove a symbol from the user's portfolio."""
+
+    telegram_id: int = Field(description="User Telegram ID.")
+    symbol: str = Field(description="BRVM symbol to remove.")
+
+
+class GetPortfolioInput(BaseModel):
+    """Get user portfolio with current prices and gain/loss per position."""
+
+    telegram_id: int = Field(description="User Telegram ID.")
+
+
+class GetPortfolioSummaryInput(BaseModel):
+    """Get portfolio summary: total cost, total value, overall gain/loss %."""
+
+    telegram_id: int = Field(description="User Telegram ID.")
+
+
+class TrackingAddInput(BaseModel):
+    """Add a symbol to the user's tracking list."""
+
+    telegram_id: int = Field(description="User Telegram ID.")
+    symbol: str = Field(description="BRVM symbol to track.")
+
+
+class TrackingRemoveInput(BaseModel):
+    """Remove a symbol from the user's tracking list."""
+
+    telegram_id: int = Field(description="User Telegram ID.")
+    symbol: str = Field(description="BRVM symbol to remove.")
+
+
+class GetTrackingInput(BaseModel):
+    """List symbols the user is tracking."""
+
+    telegram_id: int = Field(description="User Telegram ID.")
+
+
+class TargetAddInput(BaseModel):
+    """Set a price alert: notify when symbol goes above or below target."""
+
+    telegram_id: int = Field(description="User Telegram ID.")
+    symbol: str = Field(description="BRVM symbol.")
+    target_price: float = Field(description="Target price in F CFA.")
+    direction: str = Field(default="above", description="Notify when price goes 'above' or 'below' target.")
+
+
+class TargetRemoveInput(BaseModel):
+    """Remove a price alert for a symbol."""
+
+    telegram_id: int = Field(description="User Telegram ID.")
+    symbol: str = Field(description="BRVM symbol.")
+
+
+class GetTargetsInput(BaseModel):
+    """List user's price alerts."""
+
+    telegram_id: int = Field(description="User Telegram ID.")

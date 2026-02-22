@@ -11,8 +11,8 @@ langgraph
 chromadb
 # Charts
 matplotlib
-# Telegram bot
-python-telegram-bot
+# Telegram bot (job-queue for price target alerts)
+python-telegram-bot[job-queue]
 # Voice to text
 SpeechRecognition
 pydub

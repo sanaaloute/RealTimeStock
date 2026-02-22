@@ -8,13 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from telegram import Update
-from telegram.ext import Application, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, ContextTypes, CommandHandler, MessageHandler, filters
 from telegram.request import HTTPXRequest
 
 import config
 from agents import run_agent
+from .help import get_help_message
 from .redact import redact_for_telegram
 from .voice_to_text import voice_to_text
+from services.user_db import get_or_create_user, has_sent_help, mark_help_sent
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +100,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
+    # Show help on explicit "help" / "aide" / "?" (any case)
+    query_lower = query.strip().lower()
+    if query_lower in ("help", "/help", "aide", "?", "aide moi", "comment utiliser", "how to use"):
+        await update.message.reply_text(get_help_message())
+        return
+
+    # New user: send help once, then process their message
+    get_or_create_user(user_id)
+    if not has_sent_help(user_id):
+        await update.message.reply_text(get_help_message())
+        mark_help_sent(user_id)
+
     status = await update.message.reply_text("Thinking…")
     try:
         # thread_id enables conversation memory (summarize memory) per chat
@@ -107,6 +121,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             query,
             model=config.OLLAMA_MODEL,
             thread_id=thread_id,
+            telegram_user_id=user_id,
         )
         # If NLU asked for clarification, return that as the reply
         clarification = result.get("clarification")
@@ -137,13 +152,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await status.edit_text(reply)
     except Exception as e:
         logger.exception("Agent error for user %s: %s", user_id, e)
-        await status.edit_text(f"Error: {str(e)[:500]}")
+        # Ollama 503 / unavailable: friendly message instead of raw error
+        status_code = getattr(e, "status_code", None) or (e.args[1] if len(getattr(e, "args", [])) > 1 else None)
+        if status_code == 503 or "503" in str(e):
+            await status.edit_text(
+                "The AI service (Ollama) is temporarily unavailable. Often the model is not loaded yet: on your machine run "
+                "ollama pull qwen3:8b then ollama run qwen3:8b (you can exit after it loads). Try again in a moment."
+            )
+        else:
+            await status.edit_text(f"Error: {str(e)[:500]}")
 
 
 # Longer timeouts for Docker/slow networks (default is 5s; Telegram can be slow from containers)
 TELEGRAM_CONNECT_TIMEOUT = 30.0
 TELEGRAM_READ_TIMEOUT = 30.0
 TELEGRAM_WRITE_TIMEOUT = 30.0
+
+
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send help message for /help command."""
+    if update.message:
+        await update.message.reply_text(get_help_message())
+
+
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send help message for /start command (new or returning user)."""
+    if update.message and update.effective_user:
+        user_id = update.effective_user.id
+        if not _is_allowed(user_id):
+            await update.message.reply_text("You are not authorized to use this bot.")
+            return
+        await update.message.reply_text(get_help_message())
 
 
 def build_application() -> Application:
@@ -158,6 +197,8 @@ def build_application() -> Application:
         .request(request)
     )
     app = builder.build()
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("start", cmd_start))
     # Text, voice messages, or audio files
     app.add_handler(
         MessageHandler(

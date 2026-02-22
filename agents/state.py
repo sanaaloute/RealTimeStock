@@ -3,7 +3,7 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.messages import BaseMessage
 
-NextWorker = Literal["scraper", "analytics", "timeseries", "charts", "news", "FINISH"]
+NextWorker = Literal["scraper", "analytics", "timeseries", "charts", "news", "portfolio", "FINISH"]
 
 
 class AgentState(TypedDict, total=False):
@@ -17,3 +17,5 @@ class AgentState(TypedDict, total=False):
     clarification: str | None  # When set, NLU asks user to clarify; bot returns this and ends.
     # Summarize memory: condensed summary of older conversation when message count is high.
     conversation_summary: str | None
+    # Telegram user ID for portfolio/tracking/target tools (set by bot when invoking graph).
+    telegram_user_id: int | None
