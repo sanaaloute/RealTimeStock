@@ -1,0 +1,50 @@
+# BRVM listed companies: SYMBOL<Tab>Company name (one per line). Used by NLU to map user input and avoid hallucination.
+# Format: SYMBOL	Company name or common names (pipe-separated aliases optional)
+# Source: BRVM official list (brvm.org). Update when new listings occur.
+ABJC	Servair
+BICB	BIC Bénin
+BICC	BIC Côte d'Ivoire
+BNBC	Bernabé
+BOAB	Bank of Africa Bénin
+BOABF	Bank of Africa Burkina Faso
+BOAC	Bank of Africa Côte d'Ivoire
+BOAM	Bank of Africa Mali
+BOAN	Bank of Africa Niger
+BOAS	Bank of Africa Sénégal
+CABC	Sicable
+CBIBF	Coris Bank International Burkina Faso
+CFAC	CFAO Motors
+CIEC	CIE Compagnie Ivoirienne d'Electricité
+ECOC	Ecobank
+ETIT	ETIT
+FTSC	Filtisac
+LNBB	Loterie Nationale du Bénin
+NEIC	NEIC
+NSBC	NSIA Banque
+NTLC	Nestlé Côte d'Ivoire
+ONTBF	Onatel Burkina
+ORAC	Oragroup
+ORGT	ORGT
+PALC	Palm CI
+PRSC	Tractafric
+SAFC	SAFC
+SCRC	Coris Bank
+SDCC	SODECI
+SDSC	SDSC
+SEMC	Eviosys
+SGBC	Société Générale Burkina
+SHEC	Vivo Energy
+SIBC	SIBC
+SICC	Sicor
+SIVC	Air Liquide
+SLBC	Solibra
+SMBC	SMB Société Minière
+SNTS	Sonatel
+SOGC	SOGB
+SPHC	SAPH
+STAC	Setao
+STBC	SITAB
+TTLC	Total Côte d'Ivoire
+TTLS	Total Energies
+UNLC	Unilever Côte d'Ivoire
+UNXC	UNXC
