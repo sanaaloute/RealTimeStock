@@ -1,10 +1,9 @@
 """Portfolio worker: user portfolio, tracking list, price targets. Uses telegram_id from state."""
 from __future__ import annotations
 
-from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 
-import config
+from agents.llm import get_llm
 from agents.utils import get_time_prefix
 from ..tools.portfolio_tools import PORTFOLIO_TOOLS
 
@@ -33,8 +32,5 @@ Present results clearly. Do not mention tool names or internal details in the fi
 
 def create_portfolio_agent(model: str = "qwen3:8b"):
     """Build ReAct agent with portfolio/tracking/target tools."""
-    kwargs = {"model": model, "temperature": 0}
-    if config.OLLAMA_BASE_URL:
-        kwargs["base_url"] = config.OLLAMA_BASE_URL
-    llm = ChatOllama(**kwargs)
+    llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, PORTFOLIO_TOOLS)

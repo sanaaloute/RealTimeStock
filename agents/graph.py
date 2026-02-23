@@ -2,15 +2,19 @@
 from __future__ import annotations
 
 import inspect
-from typing import Callable, Literal
+from pathlib import Path
+from typing import Any, Callable, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph
+
+from agents.llm import get_llm
 from langgraph.checkpoint.memory import MemorySaver
 
-import config
 from agents.state import AgentState, NextWorker
+
+# Path for persistent chat memory (user + AI messages across sessions)
+CHAT_MEMORY_DB = Path(__file__).resolve().parent.parent / "data" / "chat_memory.db"
 from agents.utils import get_time_prefix
 from agents.workers.analytics_agent import create_analytics_agent, get_analytics_agent_system
 from agents.workers.charts_agent import create_charts_agent, _extract_image_path_from_messages, get_charts_agent_system
@@ -69,10 +73,7 @@ def _summarize_messages(messages: list, model: str) -> str:
     if not messages:
         return ""
     from langchain_core.messages import messages_to_str
-    kwargs = {"model": model, "temperature": 0}
-    if config.OLLAMA_BASE_URL:
-        kwargs["base_url"] = config.OLLAMA_BASE_URL
-    llm = ChatOllama(**kwargs)
+    llm = get_llm(model=model, temperature=0)
     text = messages_to_str(messages)[:8000]
     prompt = f"""Summarize this BRVM stock market conversation in 2–4 short sentences. Include: stock symbols mentioned (e.g. NTLC, SLBC), what the user asked for, and key facts (prices, dates, comparisons). Omit tool names, file paths, and internal implementation details.
 
@@ -88,10 +89,7 @@ Summary:"""
 
 
 def _build_supervisor_node(model: str):
-    kwargs = {"model": model, "temperature": 0}
-    if config.OLLAMA_BASE_URL:
-        kwargs["base_url"] = config.OLLAMA_BASE_URL
-    llm = ChatOllama(**kwargs)
+    llm = get_llm(model=model, temperature=0)
 
     def supervisor(state: AgentState) -> dict:
         messages = state.get("messages") or []
@@ -191,8 +189,12 @@ def route_after_supervisor(
     return "__end__"
 
 
-def create_master_graph(model: str = "qwen3:8b") -> "CompiledStateGraph":
-    """Build the graph: NLU (entry) -> supervisor -> (scraper | analytics | timeseries | charts | END); workers -> supervisor."""
+def create_master_graph(
+    model: str = "qwen3:8b",
+    checkpointer: Any | None = None,
+) -> "CompiledStateGraph":
+    """Build the graph: NLU (entry) -> supervisor -> (scraper | analytics | timeseries | charts | END); workers -> supervisor.
+    If checkpointer is provided (e.g. SqliteSaver), chat memory persists across restarts."""
     builder = StateGraph(AgentState)
 
     builder.add_node("nlu", create_nlu_node(model))
@@ -217,8 +219,8 @@ def create_master_graph(model: str = "qwen3:8b") -> "CompiledStateGraph":
     builder.add_edge("news", "supervisor")
     builder.add_edge("portfolio", "supervisor")
 
-    memory = MemorySaver()
-    return builder.compile(checkpointer=memory)
+    cp = checkpointer if checkpointer is not None else MemorySaver()
+    return builder.compile(checkpointer=cp)
 
 
 def run_agent(
@@ -226,11 +228,13 @@ def run_agent(
     model: str = "qwen3:8b",
     thread_id: str | None = None,
     telegram_user_id: int | None = None,
+    checkpointer: Any | None = None,
 ) -> dict:
     """Run the master agent on a user query. Returns final state with messages.
     If thread_id is set, conversation is persisted (summarize memory) across calls.
+    If checkpointer is provided (e.g. SqliteSaver), user+AI chat history persists across restarts.
     telegram_user_id is passed to portfolio/tracking/target tools when the user manages portfolio or alerts."""
-    graph = create_master_graph(model=model)
+    graph = create_master_graph(model=model, checkpointer=checkpointer)
     run_config = {"configurable": {"thread_id": thread_id or "default"}}
     # Append new message to existing conversation when using memory
     current = graph.get_state(run_config)

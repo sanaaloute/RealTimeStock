@@ -114,14 +114,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     status = await update.message.reply_text("Thinking…")
     try:
-        # thread_id enables conversation memory (summarize memory) per chat
+        # thread_id enables conversation memory per chat; checkpointer persists user+AI history
         thread_id = str(update.effective_chat.id) if update.effective_chat else str(user_id)
+        checkpointer = getattr(context.application, "bot_data", {}).get("checkpointer")
         result = await asyncio.to_thread(
             run_agent,
             query,
             model=config.OLLAMA_MODEL,
             thread_id=thread_id,
             telegram_user_id=user_id,
+            checkpointer=checkpointer,
         )
         # If NLU asked for clarification, return that as the reply
         clarification = result.get("clarification")
@@ -185,7 +187,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(get_help_message())
 
 
-def build_application() -> Application:
+def build_application(checkpointer=None) -> Application:
+    """Build the Telegram app. If checkpointer is provided, chat memory persists across restarts."""
     request = HTTPXRequest(
         connect_timeout=TELEGRAM_CONNECT_TIMEOUT,
         read_timeout=TELEGRAM_READ_TIMEOUT,
@@ -197,6 +200,8 @@ def build_application() -> Application:
         .request(request)
     )
     app = builder.build()
+    if checkpointer is not None:
+        app.bot_data["checkpointer"] = checkpointer
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("start", cmd_start))
     # Text, voice messages, or audio files

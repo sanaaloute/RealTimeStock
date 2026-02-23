@@ -5,10 +5,9 @@ from __future__ import annotations
 import json
 
 from langchain_core.messages import ToolMessage
-from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 
-import config
+from agents.llm import get_llm
 from agents.utils import get_time_prefix
 from ..tools.stock_tools import get_timeseries_tool, plot_company_chart_tool
 
@@ -48,8 +47,5 @@ def _extract_image_path_from_messages(messages: list) -> str | None:
 
 def create_charts_agent(model: str = "qwen3:8b"):
     """Build ReAct agent with get_timeseries and plot_company_chart (returns image path in tool result)."""
-    kwargs = {"model": model, "temperature": 0}
-    if config.OLLAMA_BASE_URL:
-        kwargs["base_url"] = config.OLLAMA_BASE_URL
-    llm = ChatOllama(**kwargs)
+    llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, CHARTS_TOOLS)

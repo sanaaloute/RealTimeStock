@@ -4,9 +4,7 @@ from __future__ import annotations
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama
-
-import config
+from agents.llm import get_llm
 
 # Drop lines that mention file paths or tool usage (internal details)
 _PATH_LINE = re.compile(
@@ -62,10 +60,7 @@ def redact_for_telegram(raw_output: str, model: str | None = None) -> str:
     if not raw:
         return "No answer."
 
-    kwargs = {"model": model or config.OLLAMA_MODEL, "temperature": 0}
-    if config.OLLAMA_BASE_URL:
-        kwargs["base_url"] = config.OLLAMA_BASE_URL
-    llm = ChatOllama(**kwargs)
+    llm = get_llm(model=model, temperature=0)
     messages = [
         SystemMessage(content=REDACT_SYSTEM),
         HumanMessage(content=REDACT_USER_TEMPLATE.format(raw_output=raw)),

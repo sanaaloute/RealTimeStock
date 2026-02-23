@@ -2,6 +2,7 @@
 Run the Telegram bot (natural-language questions → master agent). Authorized users only.
 
 Schedules: daily timeseries CSV update; periodic check of price targets and notifies users.
+Chat memory (user + AI) persists in data/chat_memory.db across restarts.
 """
 import logging
 import sys
@@ -9,6 +10,7 @@ import threading
 import time
 
 import config
+from agents.graph import CHAT_MEMORY_DB
 from bot import build_application
 from services._data import run_daily_timeseries_update
 
@@ -65,21 +67,31 @@ def main() -> int:
     thread = threading.Thread(target=_daily_timeseries_job, daemon=True)
     thread.start()
 
-    app = build_application()
-    # Price target alerts: check every 5 min (requires pip install "python-telegram-bot[job-queue]")
-    if app.job_queue is not None:
-        app.job_queue.run_repeating(_check_target_alerts, interval=TARGET_CHECK_INTERVAL_SEC, first=60)
-        logger.info(
-            "Bot starting (allowed IDs: %s). Daily timeseries + target alerts (every %s s) scheduled.",
-            config.ALLOWED_TELEGRAM_IDS,
-            TARGET_CHECK_INTERVAL_SEC,
-        )
-    else:
-        logger.warning(
-            "JobQueue not available. Install with: pip install \"python-telegram-bot[job-queue]\" for price target alerts."
-        )
-        logger.info("Bot starting (allowed IDs: %s). Daily timeseries scheduled; target alerts disabled.", config.ALLOWED_TELEGRAM_IDS)
-    app.run_polling(allowed_updates=["message"], bootstrap_retries=5)
+    # Persistent chat memory: user + AI messages in SQLite
+    CHAT_MEMORY_DB.parent.mkdir(parents=True, exist_ok=True)
+    from langgraph.checkpoint.sqlite import SqliteSaver
+
+    with SqliteSaver.from_conn_string(str(CHAT_MEMORY_DB)) as checkpointer:
+        app = build_application(checkpointer=checkpointer)
+        # Price target alerts: check every 5 min (requires pip install "python-telegram-bot[job-queue]")
+        if app.job_queue is not None:
+            app.job_queue.run_repeating(_check_target_alerts, interval=TARGET_CHECK_INTERVAL_SEC, first=60)
+            logger.info(
+                "Bot starting (allowed IDs: %s). Chat memory: %s. Daily timeseries + target alerts (every %s s) scheduled.",
+                config.ALLOWED_TELEGRAM_IDS,
+                CHAT_MEMORY_DB,
+                TARGET_CHECK_INTERVAL_SEC,
+            )
+        else:
+            logger.warning(
+                "JobQueue not available. Install with: pip install \"python-telegram-bot[job-queue]\" for price target alerts."
+            )
+            logger.info(
+                "Bot starting (allowed IDs: %s). Chat memory: %s. Daily timeseries scheduled; target alerts disabled.",
+                config.ALLOWED_TELEGRAM_IDS,
+                CHAT_MEMORY_DB,
+            )
+        app.run_polling(allowed_updates=["message"], bootstrap_retries=5)
     return 0
 
 
