@@ -1,10 +1,9 @@
 """News worker: fetch BRVM news from Rich Bourse, Sika Finance, BRVM. Answer only from fetched data; otherwise say you don't know or ask to clarify."""
 from __future__ import annotations
 
-from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 
-import config
+from agents.llm import get_llm
 from ..tools.stock_tools import (
     get_brvm_announcements_tool,
     get_company_news_tool,
@@ -39,8 +38,5 @@ def get_news_agent_system() -> str:
 
 def create_news_agent(model: str = "qwen3:8b"):
     """Build ReAct agent with news tools. System prompt is prepended in the graph node."""
-    kwargs = {"model": model, "temperature": 0}
-    if config.OLLAMA_BASE_URL:
-        kwargs["base_url"] = config.OLLAMA_BASE_URL
-    llm = ChatOllama(**kwargs)
+    llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, NEWS_TOOLS)

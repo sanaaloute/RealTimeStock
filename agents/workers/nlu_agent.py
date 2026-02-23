@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama
+from agents.llm import get_llm
 
 import config
 from services.brvm_companies import (
@@ -147,10 +147,7 @@ def run_nlu_node(state: dict, model: str) -> dict:
             "structured_data": None,
         }
 
-    kwargs = {"model": model, "temperature": 0}
-    if config.OLLAMA_BASE_URL:
-        kwargs["base_url"] = config.OLLAMA_BASE_URL
-    llm = ChatOllama(**kwargs)
+    llm = get_llm(model=model, temperature=0)
 
     system = _nlu_system_prompt()
     prompt = f"User message: {user_text}"

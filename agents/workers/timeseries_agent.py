@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 
-import config
+from agents.llm import get_llm
 from agents.utils import get_time_prefix
 from ..tools.stock_tools import (
     ensure_all_timeseries_tool,
@@ -32,8 +31,5 @@ TIMESERIES_TOOLS = [
 
 def create_timeseries_agent(model: str = "qwen3:8b"):
     """Build ReAct agent for checking/updating company time series CSVs (daily job)."""
-    kwargs = {"model": model, "temperature": 0}
-    if config.OLLAMA_BASE_URL:
-        kwargs["base_url"] = config.OLLAMA_BASE_URL
-    llm = ChatOllama(**kwargs)
+    llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, TIMESERIES_TOOLS)

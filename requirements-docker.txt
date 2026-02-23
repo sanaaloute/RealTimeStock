@@ -8,6 +8,7 @@ pydantic
 langchain-core
 langchain-ollama
 langgraph
+langgraph-checkpoint-sqlite
 chromadb
 # Charts
 matplotlib

@@ -1,10 +1,9 @@
 """Analytics worker agent: metrics, time series, comparison, stats."""
 from __future__ import annotations
 
-from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 
-import config
+from agents.llm import get_llm
 from agents.utils import get_time_prefix
 from ..tools.stock_tools import (
     compare_stocks_tool,
@@ -45,8 +44,5 @@ ANALYTICS_TOOLS = [
 
 def create_analytics_agent(model: str = "qwen3:8b"):
     """Build ReAct agent with analytics tools. Use for: price/volume/growth, series, compare, average/median."""
-    kwargs = {"model": model, "temperature": 0}
-    if config.OLLAMA_BASE_URL:
-        kwargs["base_url"] = config.OLLAMA_BASE_URL
-    llm = ChatOllama(**kwargs)
+    llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, ANALYTICS_TOOLS)

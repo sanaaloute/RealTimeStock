@@ -54,5 +54,6 @@ htmlcov/
 .mypy_cache/
 *.log
 
-# Bot user data (portfolio, tracking, targets)
+# Bot user data (portfolio, tracking, targets, chat memory)
 data/brvm_bot.db
+data/chat_memory.db

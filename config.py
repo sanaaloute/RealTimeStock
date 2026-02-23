@@ -32,6 +32,9 @@ TIMESERIES_SYMBOLS: list[str] = [s.strip().upper() for s in _raw_symbols.split("
     "NTLC", "SLBC", "SNTS", "TTLS", "CFA", "BOAB", "BICC", "SDSC", "SDCC", "FTSC", "CAGC", "TLSR", "ETIT", "SGBC", "NEIC", "SMBC", "CBIBF", "ECOC", "BRVM"
 ]
 
-# Ollama (agent + redact)
+# Ollama model for the agent (CLI and Telegram)
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "").strip() or None
+# How long to keep model in GPU after last request. Use "0" or "0s" to unload immediately and free GPU.
+# Examples: "5m", "2m", "0" (unload right away). Default 2 min keeps model warm for quick follow-ups.
+OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "2m").strip() or "2m"
