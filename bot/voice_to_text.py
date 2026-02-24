@@ -1,4 +1,4 @@
-"""Convert Telegram voice/audio to text for the agent. Uses SpeechRecognition (Google or Sphinx)."""
+"""Voice/audio to text (SpeechRecognition)."""
 from __future__ import annotations
 
 import logging
@@ -9,10 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 def voice_to_text(audio_path: str | Path, language: str = "fr-FR") -> str | None:
-    """
-    Transcribe audio file to text. Supports OGG (Telegram voice), WAV, etc.
-    Returns None if conversion fails. Runs synchronously (call from asyncio.to_thread).
-    """
     path = Path(audio_path)
     if not path.exists():
         logger.warning("Audio file not found: %s", path)

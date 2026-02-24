@@ -1,17 +1,8 @@
-"""
-Run the master agent (LangGraph: supervisor + scraper / analytics workers).
-
-Requires Ollama with a model (e.g. ollama run qwen3:8b).
-Chat memory persists in data/chat_memory.db (use --no-memory to skip).
-
-  python run_agent.py "What is the current price of NTLC?"
-  python run_agent.py "Compare NTLC and SLBC"
-  python run_agent.py --model qwen3:8b "Get Rich Bourse palmarès for last week"
-  python run_agent.py --no-memory "One-off query without history"
-"""
+"""Run BRVM agent (CLI). Memory: data/chat_memory.db unless --no-memory."""
 import argparse
 import sys
 
+import config
 from agents import run_agent
 from agents.graph import CHAT_MEMORY_DB
 
@@ -19,7 +10,7 @@ from agents.graph import CHAT_MEMORY_DB
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run BRVM stock master agent (scraper + analytics workers).")
     parser.add_argument("query", nargs="?", default="", help="User question (or read from stdin).")
-    parser.add_argument("--model", default="qwen3:8b", help="Ollama model name (default: qwen3:8b).")
+    parser.add_argument("--model", default="qwen3:8b", help="Ollama model name.")
     parser.add_argument("--no-memory", action="store_true", help="Disable persistent chat memory for this run.")
     args = parser.parse_args()
 
@@ -30,6 +21,9 @@ def main() -> int:
     if not text:
         text = sys.stdin.read().strip()
     if not text:
+        return 1
+    if config.OLLAMA_CLOUD and not config.OLLAMA_API_KEY:
+        print("Error: OLLAMA_API_KEY is required when OLLAMA_CLOUD=true. Create one at https://ollama.com/settings/keys", file=sys.stderr)
         return 1
 
     print("Running agent...")

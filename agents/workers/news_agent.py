@@ -1,4 +1,4 @@
-"""News worker: fetch BRVM news from Rich Bourse, Sika Finance, BRVM. Answer only from fetched data; otherwise say you don't know or ask to clarify."""
+"""News worker: fetch BRVM news from Rich Bourse, Sika Finance, BRVM."""
 from __future__ import annotations
 
 from langgraph.prebuilt import create_react_agent
@@ -37,6 +37,5 @@ def get_news_agent_system() -> str:
 
 
 def create_news_agent(model: str = "qwen3:8b"):
-    """Build ReAct agent with news tools. System prompt is prepended in the graph node."""
     llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, NEWS_TOOLS)

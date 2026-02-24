@@ -1,4 +1,4 @@
-"""Timeseries CSV worker: ensure company CSVs exist and are up to date; run daily updates."""
+"""Timeseries CSV worker: ensure CSVs exist, daily updates."""
 
 from __future__ import annotations
 
@@ -30,6 +30,5 @@ TIMESERIES_TOOLS = [
 
 
 def create_timeseries_agent(model: str = "qwen3:8b"):
-    """Build ReAct agent for checking/updating company time series CSVs (daily job)."""
     llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, TIMESERIES_TOOLS)

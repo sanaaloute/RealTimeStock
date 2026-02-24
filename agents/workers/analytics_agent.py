@@ -1,4 +1,4 @@
-"""Analytics worker agent: metrics, time series, comparison, stats."""
+"""Analytics worker: metrics, timeseries, comparison, BRVM basics."""
 from __future__ import annotations
 
 from langgraph.prebuilt import create_react_agent
@@ -16,7 +16,6 @@ from ..tools.stock_tools import (
 
 
 def get_analytics_agent_system() -> str:
-    """System prompt for the analytics worker."""
     return f"""You are the BRVM analytics worker. This assistant covers only the BRVM (Bourse Régionale des Valeurs Mobilières). Do not mention or use data from other stock exchanges (e.g. NYSE, NASDAQ, other African bourses). Answer only from tool results; do not invent numbers or symbols.
 
 **{get_time_prefix()}**
@@ -43,6 +42,5 @@ ANALYTICS_TOOLS = [
 
 
 def create_analytics_agent(model: str = "qwen3:8b"):
-    """Build ReAct agent with analytics tools. Use for: price/volume/growth, series, compare, average/median."""
     llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, ANALYTICS_TOOLS)

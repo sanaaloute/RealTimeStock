@@ -1,16 +1,12 @@
-"""
-Run the Telegram bot (natural-language questions → master agent). Authorized users only.
-
-Schedules: daily timeseries CSV update; periodic check of price targets and notifies users.
-Chat memory (user + AI) persists in data/chat_memory.db across restarts.
-"""
+"""Run Telegram bot. Requires Chat API (run_api.py). Schedules: daily timeseries, price target alerts."""
 import logging
 import sys
 import threading
 import time
 
+import httpx
+
 import config
-from agents.graph import CHAT_MEMORY_DB
 from bot import build_application
 from services._data import run_daily_timeseries_update
 
@@ -62,36 +58,60 @@ def main() -> int:
     if not config.ALLOWED_TELEGRAM_IDS:
         logger.error("ALLOWED_TELEGRAM_IDS is empty. Add at least one Telegram user ID to .env.")
         return 1
+    if config.OLLAMA_CLOUD and not config.OLLAMA_API_KEY:
+        logger.error("OLLAMA_API_KEY is required when OLLAMA_CLOUD=true. Create one at https://ollama.com/settings/keys")
+        return 1
 
-    # Schedule daily CSV update (once per day)
+    api_url = config.BRVM_API_URL
+    health_url = f"{api_url}/health"
+    client_kwargs = {"timeout": 5.0}
+    if "localhost" in api_url.lower() or "127.0.0.1" in api_url:
+        client_kwargs["trust_env"] = False
+    try:
+        with httpx.Client(**client_kwargs) as client:
+            r = client.get(health_url)
+            if r.status_code != 200:
+                logger.error(
+                    "Chat API at %s returned %s. Start the API first: python run_api.py",
+                    api_url,
+                    r.status_code,
+                )
+                return 1
+    except httpx.ConnectError as e:
+        logger.error(
+            "Cannot reach Chat API at %s. Is it running? Start it with: python run_api.py\n"
+            "If bot and API run on different machines, set BRVM_API_URL in .env to the API URL (e.g. http://your-server:8000).\n"
+            "Error: %s",
+            api_url,
+            e,
+        )
+        return 1
+    except Exception as e:
+        logger.error("Chat API health check failed: %s", e)
+        return 1
+
     thread = threading.Thread(target=_daily_timeseries_job, daemon=True)
     thread.start()
 
-    # Persistent chat memory: user + AI messages in SQLite
-    CHAT_MEMORY_DB.parent.mkdir(parents=True, exist_ok=True)
-    from langgraph.checkpoint.sqlite import SqliteSaver
-
-    with SqliteSaver.from_conn_string(str(CHAT_MEMORY_DB)) as checkpointer:
-        app = build_application(checkpointer=checkpointer)
-        # Price target alerts: check every 5 min (requires pip install "python-telegram-bot[job-queue]")
-        if app.job_queue is not None:
-            app.job_queue.run_repeating(_check_target_alerts, interval=TARGET_CHECK_INTERVAL_SEC, first=60)
-            logger.info(
-                "Bot starting (allowed IDs: %s). Chat memory: %s. Daily timeseries + target alerts (every %s s) scheduled.",
-                config.ALLOWED_TELEGRAM_IDS,
-                CHAT_MEMORY_DB,
-                TARGET_CHECK_INTERVAL_SEC,
-            )
-        else:
-            logger.warning(
-                "JobQueue not available. Install with: pip install \"python-telegram-bot[job-queue]\" for price target alerts."
-            )
-            logger.info(
-                "Bot starting (allowed IDs: %s). Chat memory: %s. Daily timeseries scheduled; target alerts disabled.",
-                config.ALLOWED_TELEGRAM_IDS,
-                CHAT_MEMORY_DB,
-            )
-        app.run_polling(allowed_updates=["message"], bootstrap_retries=5)
+    app = build_application()
+    if app.job_queue is not None:
+        app.job_queue.run_repeating(_check_target_alerts, interval=TARGET_CHECK_INTERVAL_SEC, first=60)
+        logger.info(
+            "Bot starting (allowed IDs: %s). Chat API: %s. Daily timeseries + target alerts (every %s s) scheduled.",
+            config.ALLOWED_TELEGRAM_IDS,
+            config.BRVM_API_URL,
+            TARGET_CHECK_INTERVAL_SEC,
+        )
+    else:
+        logger.warning(
+            "JobQueue not available. Install with: pip install \"python-telegram-bot[job-queue]\" for price target alerts."
+        )
+        logger.info(
+            "Bot starting (allowed IDs: %s). Chat API: %s. Daily timeseries scheduled; target alerts disabled.",
+            config.ALLOWED_TELEGRAM_IDS,
+            config.BRVM_API_URL,
+        )
+    app.run_polling(allowed_updates=["message"], bootstrap_retries=5)
     return 0
 
 

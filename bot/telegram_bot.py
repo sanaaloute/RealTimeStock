@@ -1,20 +1,20 @@
-"""Telegram bot: forwards messages to the master agent; only allowed users. Accepts text or voice/audio."""
+"""Telegram bot: forwards to Chat API, allowed users only. Text and voice."""
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import tempfile
 from pathlib import Path
 from typing import Any
 
+import httpx
 from telegram import Update
 from telegram.ext import Application, ContextTypes, CommandHandler, MessageHandler, filters
 from telegram.request import HTTPXRequest
 
 import config
-from agents import run_agent
 from .help import get_help_message
-from .redact import redact_for_telegram
 from .voice_to_text import voice_to_text
 from services.user_db import get_or_create_user, has_sent_help, mark_help_sent
 
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 MAX_MESSAGE_LENGTH = 4096  # Telegram limit
 MAX_CAPTION_LENGTH = 1024  # Telegram photo caption limit
 VOICE_LANGUAGE = "fr-FR"  # BRVM / West Africa; use "en-US" for English
+API_TIMEOUT = 120.0  # Agent can take a while
 
 
 def _is_allowed(user_id: int) -> bool:
@@ -31,29 +32,37 @@ def _is_allowed(user_id: int) -> bool:
     return user_id in config.ALLOWED_TELEGRAM_IDS
 
 
-def _extract_reply(messages: list[Any]) -> str:
-    """Last AI message content, or fallback."""
-    for m in reversed(messages):
-        if not getattr(m, "content", None):
-            continue
-        kind = getattr(m, "type", None) or type(m).__name__
-        if kind == "ai" or "AI" in str(kind):
-            return str(m.content).strip()
-    for m in reversed(messages):
-        if getattr(m, "content", None) and "Human" not in type(m).__name__:
-            return str(m.content).strip()
-    return "No answer from the agent."
+def _is_local_api() -> bool:
+    u = config.BRVM_API_URL.lower()
+    return "localhost" in u or "127.0.0.1" in u
+
+
+async def _call_chat_api(query: str, thread_id: str, telegram_user_id: int) -> dict[str, Any]:
+    url = f"{config.BRVM_API_URL}/chat"
+    payload = {"query": query, "thread_id": thread_id, "telegram_user_id": telegram_user_id}
+    client_kwargs = {"timeout": API_TIMEOUT}
+    if _is_local_api():
+        client_kwargs["trust_env"] = False
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        resp = await client.post(url, json=payload)
+        if resp.status_code != 200:
+            try:
+                data = resp.json()
+                if "error" in data:
+                    return data
+            except Exception:
+                pass
+            return {"error": "The AI service is temporarily unavailable. Try again in a moment."}
+        return resp.json()
 
 
 async def _get_query_from_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str | None:
-    """Extract query from text, or from voice/audio by converting to text. Returns None if nothing to process."""
     msg = update.message
     if not msg:
         return None
     # Text
     if msg.text:
         return msg.text.strip() or None
-    # Voice or audio: download and transcribe
     voice = getattr(msg, "voice", None)
     audio = getattr(msg, "audio", None)
     file_id = None
@@ -100,13 +109,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    # Show help on explicit "help" / "aide" / "?" (any case)
     query_lower = query.strip().lower()
     if query_lower in ("help", "/help", "aide", "?", "aide moi", "comment utiliser", "how to use"):
         await update.message.reply_text(get_help_message())
         return
 
-    # New user: send help once, then process their message
     get_or_create_user(user_id)
     if not has_sent_help(user_id):
         await update.message.reply_text(get_help_message())
@@ -114,71 +121,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     status = await update.message.reply_text("Thinking…")
     try:
-        # thread_id enables conversation memory per chat; checkpointer persists user+AI history
         thread_id = str(update.effective_chat.id) if update.effective_chat else str(user_id)
-        checkpointer = getattr(context.application, "bot_data", {}).get("checkpointer")
-        result = await asyncio.to_thread(
-            run_agent,
-            query,
-            model=config.OLLAMA_MODEL,
-            thread_id=thread_id,
-            telegram_user_id=user_id,
-            checkpointer=checkpointer,
-        )
-        # If NLU asked for clarification, return that as the reply
-        clarification = result.get("clarification")
-        if clarification:
-            reply = await asyncio.to_thread(redact_for_telegram, clarification)
-            if len(reply) > MAX_MESSAGE_LENGTH:
-                reply = reply[: MAX_MESSAGE_LENGTH - 20] + "\n\n… (truncated)"
-            await status.edit_text(reply)
-            return
-
-        messages = result.get("messages") or []
-        raw_reply = _extract_reply(messages)
-        reply = await asyncio.to_thread(redact_for_telegram, raw_reply)
-        image_path = result.get("image_path")
-
-        if image_path and Path(image_path).exists():
-            caption = reply[:MAX_CAPTION_LENGTH] if len(reply) <= MAX_CAPTION_LENGTH else reply[: MAX_CAPTION_LENGTH - 20] + "\n… (truncated)"
-            await status.delete()
-            with open(image_path, "rb") as f:
-                await update.message.reply_photo(photo=f, caption=caption or None)
-            try:
-                Path(image_path).unlink(missing_ok=True)
-            except OSError:
-                pass
-        else:
-            if len(reply) > MAX_MESSAGE_LENGTH:
-                reply = reply[: MAX_MESSAGE_LENGTH - 20] + "\n\n… (truncated)"
-            await status.edit_text(reply)
+        result = await _call_chat_api(query, thread_id, user_id)
     except Exception as e:
-        logger.exception("Agent error for user %s: %s", user_id, e)
-        # Ollama 503 / unavailable: friendly message instead of raw error
-        status_code = getattr(e, "status_code", None) or (e.args[1] if len(getattr(e, "args", [])) > 1 else None)
-        if status_code == 503 or "503" in str(e):
-            await status.edit_text(
-                "The AI service (Ollama) is temporarily unavailable. Often the model is not loaded yet: on your machine run "
-                "ollama pull qwen3:8b then ollama run qwen3:8b (you can exit after it loads). Try again in a moment."
-            )
-        else:
-            await status.edit_text(f"Error: {str(e)[:500]}")
+        logger.exception("API call failed for user %s: %s", user_id, e)
+        await status.edit_text("Could not reach the AI service. Try again in a moment.")
+        return
+
+    if "error" in result:
+        await status.edit_text(result["error"])
+        return
+
+    reply = result.get("reply", "")
+    if len(reply) > MAX_MESSAGE_LENGTH:
+        reply = reply[: MAX_MESSAGE_LENGTH - 20] + "\n\n… (truncated)"
+
+    image_base64 = result.get("image_base64")
+    if image_base64:
+        caption = reply[:MAX_CAPTION_LENGTH] if len(reply) <= MAX_CAPTION_LENGTH else reply[: MAX_CAPTION_LENGTH - 20] + "\n… (truncated)"
+        await status.delete()
+        try:
+            img_bytes = base64.b64decode(image_base64)
+            await update.message.reply_photo(photo=img_bytes, caption=caption or None)
+        except Exception as e:
+            logger.warning("Failed to send image: %s", e)
+            await update.message.reply_text(reply)
+    else:
+        await status.edit_text(reply)
 
 
-# Longer timeouts for Docker/slow networks (default is 5s; Telegram can be slow from containers)
 TELEGRAM_CONNECT_TIMEOUT = 30.0
 TELEGRAM_READ_TIMEOUT = 30.0
 TELEGRAM_WRITE_TIMEOUT = 30.0
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send help message for /help command."""
     if update.message:
         await update.message.reply_text(get_help_message())
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send help message for /start command (new or returning user)."""
     if update.message and update.effective_user:
         user_id = update.effective_user.id
         if not _is_allowed(user_id):
@@ -187,8 +169,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(get_help_message())
 
 
-def build_application(checkpointer=None) -> Application:
-    """Build the Telegram app. If checkpointer is provided, chat memory persists across restarts."""
+def build_application() -> Application:
     request = HTTPXRequest(
         connect_timeout=TELEGRAM_CONNECT_TIMEOUT,
         read_timeout=TELEGRAM_READ_TIMEOUT,
@@ -200,11 +181,8 @@ def build_application(checkpointer=None) -> Application:
         .request(request)
     )
     app = builder.build()
-    if checkpointer is not None:
-        app.bot_data["checkpointer"] = checkpointer
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("start", cmd_start))
-    # Text, voice messages, or audio files
     app.add_handler(
         MessageHandler(
             (filters.TEXT & ~filters.COMMAND) | filters.VOICE | filters.AUDIO,

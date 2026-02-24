@@ -1,4 +1,4 @@
-"""Tools for user portfolio, tracking list, and price targets. All require telegram_id from context."""
+"""Portfolio, tracking, price targets (telegram_id from context)."""
 from __future__ import annotations
 
 import json

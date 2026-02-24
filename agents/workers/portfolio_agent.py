@@ -1,4 +1,4 @@
-"""Portfolio worker: user portfolio, tracking list, price targets. Uses telegram_id from state."""
+"""Portfolio worker: portfolio, tracking, price targets (telegram_id from state)."""
 from __future__ import annotations
 
 from langgraph.prebuilt import create_react_agent
@@ -9,7 +9,6 @@ from ..tools.portfolio_tools import PORTFOLIO_TOOLS
 
 
 def get_portfolio_agent_system(telegram_id: int) -> str:
-    """System prompt for the portfolio worker; inject telegram_id so the LLM passes it to tools."""
     return f"""You are the BRVM portfolio and alerts worker. You help the user manage their portfolio (positions with buy price and date), their tracking list (symbols they watch), and price alerts (notify when a stock reaches a target price). All amounts are in F CFA. Use only BRVM symbols.
 
 **{get_time_prefix()}**
@@ -31,6 +30,5 @@ Present results clearly. Do not mention tool names or internal details in the fi
 
 
 def create_portfolio_agent(model: str = "qwen3:8b"):
-    """Build ReAct agent with portfolio/tracking/target tools."""
     llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, PORTFOLIO_TOOLS)

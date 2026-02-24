@@ -1,4 +1,4 @@
-"""Shared state for the master/worker agent graph."""
+"""Shared state for the agent graph."""
 from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.messages import BaseMessage
@@ -7,15 +7,10 @@ NextWorker = Literal["scraper", "analytics", "timeseries", "charts", "news", "po
 
 
 class AgentState(TypedDict, total=False):
-    """State passed between supervisor and workers."""
-
-    messages: Annotated[list[BaseMessage], "Chat messages; workers append responses."]
-    next: NextWorker  # Set by supervisor; which worker to run or FINISH.
-    image_path: str | None  # Set by charts worker when a plot was generated; bot sends as photo.
-    # NLU: extracted intent + entities for downstream workers; or clarification question for the user.
-    structured_data: dict[str, Any] | None  # intent, entities, suggested_worker when clear.
-    clarification: str | None  # When set, NLU asks user to clarify; bot returns this and ends.
-    # Summarize memory: condensed summary of older conversation when message count is high.
+    messages: Annotated[list[BaseMessage], "Chat messages"]
+    next: NextWorker
+    image_path: str | None
+    structured_data: dict[str, Any] | None
+    clarification: str | None
     conversation_summary: str | None
-    # Telegram user ID for portfolio/tracking/target tools (set by bot when invoking graph).
     telegram_user_id: int | None

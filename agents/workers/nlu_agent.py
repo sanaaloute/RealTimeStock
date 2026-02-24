@@ -1,4 +1,4 @@
-"""NLU worker: understand user intent, extract structured data, or ask for clarification."""
+"""NLU: intent/entity extraction, clarification, suggested_worker."""
 from __future__ import annotations
 
 import json
@@ -18,7 +18,6 @@ from agents.utils import get_time_prefix
 
 
 def _nlu_system_prompt() -> str:
-    """Build NLU system prompt including the BRVM company list to avoid hallucination."""
     brvm_list = format_list_for_prompt()
     return f"""You are the NLU (natural language understanding) module for the BRVM stock assistant (Bourse Régionale des Valeurs Mobilières). This assistant covers only BRVM—not other stock exchanges (NYSE, NASDAQ, other African bourses). All amounts are in F CFA. You output either a clarification question or a single JSON object—nothing else.
 
@@ -66,7 +65,6 @@ Reply only with CLARIFY: ... or the JSON object."""
 
 
 def _extract_user_text(messages: list) -> str:
-    """Last human message content."""
     for m in reversed(messages):
         if isinstance(m, HumanMessage) and m.content:
             return str(m.content).strip()
@@ -74,10 +72,6 @@ def _extract_user_text(messages: list) -> str:
 
 
 def _parse_nlu_response(content: str) -> tuple[dict[str, Any] | None, str | None]:
-    """
-    Parse LLM response. Returns (structured_data, clarification).
-    One of them is set; the other is None.
-    """
     text = (content or "").strip()
     # Clarification: line starting with CLARIFY:
     if text.upper().startswith("CLARIFY:"):
@@ -134,10 +128,6 @@ def _parse_nlu_response(content: str) -> tuple[dict[str, Any] | None, str | None
 
 
 def run_nlu_node(state: dict, model: str) -> dict:
-    """
-    NLU node: read last user message, call LLM, return state with either
-    clarification (and route to end) or structured_data + summary message (and route to supervisor).
-    """
     messages = state.get("messages") or []
     user_text = _extract_user_text(messages)
     if not user_text:
@@ -167,7 +157,6 @@ def run_nlu_node(state: dict, model: str) -> dict:
             "structured_data": None,
         }
 
-    # Append a short summary so the supervisor sees the extracted structure
     summary = f"[NLU] intent={structured_data.get('intent')}, entities={structured_data.get('entities')}, suggested_worker={structured_data.get('suggested_worker')}"
     new_messages = list(messages) + [AIMessage(content=summary)]
 
@@ -179,8 +168,6 @@ def run_nlu_node(state: dict, model: str) -> dict:
 
 
 def create_nlu_node(model: str):
-    """Build the NLU graph node (function that takes state, returns state update)."""
-
     def node(state: dict) -> dict:
         return run_nlu_node(state, model)
 
