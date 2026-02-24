@@ -1,7 +1,8 @@
-"""LangGraph: NLU -> supervisor -> (scraper | analytics | timeseries | charts | portfolio); workers -> supervisor."""
+"""LangGraph: NLU -> supervisor -> workers (scraper|analytics|timeseries|charts|news|portfolio)."""
 from __future__ import annotations
 
 import inspect
+import time
 from pathlib import Path
 from typing import Any, Callable, Literal
 
@@ -13,7 +14,6 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from agents.state import AgentState, NextWorker
 
-# Path for persistent chat memory (user + AI messages across sessions)
 CHAT_MEMORY_DB = Path(__file__).resolve().parent.parent / "data" / "chat_memory.db"
 from agents.utils import get_time_prefix
 from agents.workers.analytics_agent import create_analytics_agent, get_analytics_agent_system
@@ -24,27 +24,25 @@ from agents.workers.scraper_agent import create_scraper_agent, get_scraper_agent
 from agents.workers.timeseries_agent import create_timeseries_agent, get_timeseries_agent_system
 from agents.workers.portfolio_agent import create_portfolio_agent, get_portfolio_agent_system
 
-# When message count exceeds this, we summarize older messages and keep recent ones
 MEMORY_SUMMARY_THRESHOLD = 26
 MEMORY_KEEP_RECENT = 12
 
-SUPERVISOR_SYSTEM_TEMPLATE = """You are the routing coordinator for the BRVM (Bourse Régionale des Valeurs Mobilières) assistant. This assistant covers only BRVM—do not refer to or route questions about other stock exchanges. All monetary values are in F CFA. Your only task is to output exactly one label from the list below—no explanation, no other text.
+SUPERVISOR_SYSTEM_TEMPLATE = """BRVM routing coordinator. Output exactly one label—no explanation. All amounts in F CFA.
 
 **{time_line}**
 
-**Input:** The last assistant message may contain "[NLU] intent=..., entities=..., suggested_worker=...". Use it and the conversation to choose the next step.
+**Input:** Last message may contain "[NLU] intent=..., suggested_worker=...". Use it to choose next step.
 
-**Workers (choose exactly one):**
+**Workers (one):**
+- **SCRAPER** — Fetch/refresh raw data (palmarès, variation, CSV, BRVM site). Not for computed metrics or charts.
+- **ANALYTICS** — Market overview, price/volume, compare stocks, stats (avg/median/min/max), BRVM FAQ. Numeric/tabular—not plots.
+- **TIMESERIES** — Check/update CSV files, list CSVs, daily update. CSV ops only—not price questions.
+- **CHARTS** — Chart/graph/plot of stock price. Visual requested.
+- **NEWS** — News, actualités, announcements about BRVM.
+- **PORTFOLIO** — Portfolio, tracking list, price alerts (my portfolio, add NTLC, track SLBC, notify when NTLC hits 55000).
+- **FINISH** — Question answered, or greeting/thanks/off-topic.
 
-- **SCRAPER** — User explicitly asks to fetch, refresh, or pull raw data from BRVM sources: Sika Finance palmarès, Rich Bourse variation, Rich Bourse time series CSV, or BRVM official site. Use only when the request is about obtaining/refreshing source data, not when asking for a computed metric or chart.
-- **ANALYTICS** — User asks for: market overview (most traded stock, top by volume, top gainers/losers); current or historical price, volume, variation; comparison of two or more stocks; statistics (average, median, min, max) over a period; time series numbers without a chart; or what is BRVM / how to invest on BRVM. Use when the answer is numeric, tabular, or FAQ about BRVM—not a plot.
-- **TIMESERIES** — User asks to check, update, or refresh company CSV files; list which CSVs exist; or run the "daily update" for time series data. Use only for CSV lifecycle operations, not for answering a price or comparison question.
-- **CHARTS** — User asks for a chart, graph, or plot of a stock's price over a period (line or area). Use when a visual (image) is requested; the worker returns an image you must pass to the user with a short explanation.
-- **NEWS** — User asks for news, actualités, announcements, or latest information about a BRVM company or the BRVM market. Use for any news-like request; the worker fetches from Rich Bourse, Sika Finance, and BRVM official announcements.
-- **PORTFOLIO** — User asks about or wants to change their portfolio (show portfolio, add/remove position, portfolio growth/loss), their tracking list (add/remove symbol), or price alerts (set target, list/remove alerts). Use for "my portfolio", "add NTLC to portfolio", "track SLBC", "notify me when NTLC hits 55000", "remove NTLC from portfolio".
-- **FINISH** — The user's question has been fully answered by a previous worker reply, or the message is a greeting/thanks/off-topic and no tool is needed.
-
-**Output rule:** Reply with exactly one word: SCRAPER | ANALYTICS | TIMESERIES | CHARTS | NEWS | PORTFOLIO | FINISH."""
+**Output:** SCRAPER | ANALYTICS | TIMESERIES | CHARTS | NEWS | PORTFOLIO | FINISH"""
 
 
 def _get_supervisor_system() -> str:
@@ -69,12 +67,11 @@ def _parse_next(response: str) -> NextWorker:
 
 
 def _summarize_messages(messages: list, model: str) -> str:
-    """Condense a list of messages into a short summary for memory."""
     if not messages:
         return ""
-    from langchain_core.messages import messages_to_str
+    from langchain_core.messages.utils import get_buffer_string
     llm = get_llm(model=model, temperature=0)
-    text = messages_to_str(messages)[:8000]
+    text = get_buffer_string(messages)[:8000]
     prompt = f"""Summarize this BRVM stock market conversation in 2–4 short sentences. Include: stock symbols mentioned (e.g. NTLC, SLBC), what the user asked for, and key facts (prices, dates, comparisons). Omit tool names, file paths, and internal implementation details.
 
 Conversation:
@@ -94,7 +91,8 @@ def _build_supervisor_node(model: str):
     def supervisor(state: AgentState) -> dict:
         messages = state.get("messages") or []
         summary = state.get("conversation_summary") or ""
-        # Summarize memory: if too many messages, condense older part and keep recent
+        structured_data = state.get("structured_data")
+
         if len(messages) > MEMORY_SUMMARY_THRESHOLD:
             to_summarize = messages[:-MEMORY_KEEP_RECENT]
             new_summary = _summarize_messages(to_summarize, model)
@@ -102,6 +100,16 @@ def _build_supervisor_node(model: str):
             messages = list(messages[-MEMORY_KEEP_RECENT:])
         if not messages:
             return {"messages": messages, "next": "FINISH", "conversation_summary": summary}
+
+        last_content = (messages[-1].content if hasattr(messages[-1], "content") else "") or ""
+        if structured_data and "[NLU]" in str(last_content):
+            suggested = (structured_data.get("suggested_worker") or "").strip().lower()
+            if suggested in ("scraper", "analytics", "timeseries", "charts", "news", "portfolio"):
+                out: dict = {"messages": messages, "next": suggested}
+                if summary:
+                    out["conversation_summary"] = summary
+                return out
+
         time_system = _get_supervisor_system()
         system_content = time_system
         if summary:
@@ -118,6 +126,18 @@ def _build_supervisor_node(model: str):
     return supervisor
 
 
+def _entities_hint(structured_data: dict | None) -> str:
+    if not structured_data or not isinstance(structured_data.get("entities"), dict):
+        return ""
+    ent = structured_data["entities"]
+    if not ent:
+        return ""
+    parts = [f"{k}={v}" for k, v in ent.items() if v]
+    if not parts:
+        return ""
+    return f"\n**NLU entities (use these in tool calls):** {', '.join(parts)}"
+
+
 def _build_worker_node(
     agent_builder,
     model: str,
@@ -129,6 +149,7 @@ def _build_worker_node(
     def node(state: AgentState) -> dict:
         messages = state.get("messages") or []
         summary = state.get("conversation_summary") or ""
+        structured_data = state.get("structured_data")
         time_line = get_time_prefix()
         if prepend_system:
             if callable(prepend_system):
@@ -144,12 +165,17 @@ def _build_worker_node(
                 system_content = prepend_system
             if summary:
                 system_content = f"Conversation summary (context):\n{summary}\n\n{system_content}"
+            entities_hint = _entities_hint(structured_data)
+            if entities_hint:
+                system_content = system_content.rstrip() + entities_hint
             messages = [SystemMessage(content=system_content)] + list(messages)
         else:
-            # Workers without their own system prompt still get current time (and optional summary)
             prefix = time_line
             if summary:
                 prefix = f"Conversation summary:\n{summary}\n\n{prefix}"
+            entities_hint = _entities_hint(structured_data)
+            if entities_hint:
+                prefix = prefix.rstrip() + entities_hint
             messages = [SystemMessage(content=prefix)] + list(messages)
         result = agent.invoke({"messages": messages})
         out_messages = result.get("messages", messages)
@@ -164,7 +190,6 @@ def _build_worker_node(
 
 
 def route_after_nlu(state: AgentState) -> Literal["supervisor", "__end__"]:
-    """If NLU asked for clarification, end; else go to supervisor."""
     if state.get("clarification"):
         return "__end__"
     return "supervisor"
@@ -189,12 +214,7 @@ def route_after_supervisor(
     return "__end__"
 
 
-def create_master_graph(
-    model: str = "qwen3:8b",
-    checkpointer: Any | None = None,
-) -> "CompiledStateGraph":
-    """Build the graph: NLU (entry) -> supervisor -> (scraper | analytics | timeseries | charts | END); workers -> supervisor.
-    If checkpointer is provided (e.g. SqliteSaver), chat memory persists across restarts."""
+def create_master_graph(model: str = "qwen3:8b", checkpointer: Any | None = None) -> "CompiledStateGraph":
     builder = StateGraph(AgentState)
 
     builder.add_node("nlu", create_nlu_node(model))
@@ -230,17 +250,31 @@ def run_agent(
     telegram_user_id: int | None = None,
     checkpointer: Any | None = None,
 ) -> dict:
-    """Run the master agent on a user query. Returns final state with messages.
-    If thread_id is set, conversation is persisted (summarize memory) across calls.
-    If checkpointer is provided (e.g. SqliteSaver), user+AI chat history persists across restarts.
-    telegram_user_id is passed to portfolio/tracking/target tools when the user manages portfolio or alerts."""
     graph = create_master_graph(model=model, checkpointer=checkpointer)
     run_config = {"configurable": {"thread_id": thread_id or "default"}}
-    # Append new message to existing conversation when using memory
     current = graph.get_state(run_config)
     existing = (current.values or {}).get("messages") or []
     messages = list(existing) + [HumanMessage(content=query)]
     initial: AgentState = {"messages": messages}
     if telegram_user_id is not None:
         initial["telegram_user_id"] = telegram_user_id
-    return graph.invoke(initial, config=run_config)
+
+    last_error: BaseException | None = None
+    for attempt in range(3):
+        try:
+            return graph.invoke(initial, config=run_config)
+        except Exception as e:
+            last_error = e
+            err_str = str(e).lower()
+            is_retryable = (
+                "ssl" in err_str
+                or "eof" in err_str
+                or "connection" in err_str
+                or "connect" in err_str
+                or "timeout" in err_str
+            )
+            if is_retryable and attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise
+    raise last_error or RuntimeError("Agent invocation failed")

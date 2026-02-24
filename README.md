@@ -8,6 +8,8 @@ Scrape and query BRVM (Bourse Régionale des Valeurs Mobilières) / West African
 
 ```
 RealTimeStock/
+├── api/
+│   └── chat.py           # FastAPI: bot → API → agents (hides internal errors)
 ├── agents/
 │   ├── workers/
 │   │   ├── analytics_agent.py
@@ -54,6 +56,7 @@ RealTimeStock/
 │   └── series/
 ├── config.py
 ├── run_agent.py
+├── run_api.py            # Chat API (bot talks to this)
 ├── run_scrapers.py
 ├── run_telegram_bot.py
 ├── requirements.txt
@@ -94,8 +97,19 @@ RealTimeStock/
    ```bash
    python run_scrapers.py              # scrape sites
    python run_agent.py "Price of NTLC?" # CLI agent
-   python run_telegram_bot.py          # Telegram bot
    ```
+
+   **Telegram bot** (talks to Chat API; API runs agents and hides internal errors):
+
+   ```bash
+   # Terminal 1: start the Chat API
+   python run_api.py
+
+   # Terminal 2: start the bot
+   python run_telegram_bot.py
+   ```
+
+   Set `BRVM_API_URL` in `.env` if the API runs elsewhere (default `http://localhost:8000`).
 
    **Docker**
 

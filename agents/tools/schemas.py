@@ -1,11 +1,8 @@
-"""Pydantic schemas for agent tools (scrapers + services)."""
+"""Pydantic schemas for agent tools."""
 from pydantic import BaseModel, Field
 
 
-# --- Scraper tools ---
 class ScrapeSikafinanceInput(BaseModel):
-    """Input for scraping Sika Finance palmarès."""
-
     period: str = Field(
         default="veille",
         description="Period: veille, une_semaine, un_mois, 3_mois, 6_mois, 1_an, etc.",
@@ -13,8 +10,6 @@ class ScrapeSikafinanceInput(BaseModel):
 
 
 class ScrapeRichbourseInput(BaseModel):
-    """Input for scraping Rich Bourse variation/palmarès."""
-
     period: str = Field(
         default="veille",
         description="Period: veille, 1_semaine, 1_mois, 3_mois, 6_mois, 1_an, etc.",
@@ -26,21 +21,14 @@ class ScrapeRichbourseInput(BaseModel):
 
 
 class ScrapeRichbourseTimeseriesInput(BaseModel):
-    """Input for fetching and saving Rich Bourse time series for a symbol."""
-
     symbol: str = Field(description="Stock symbol (e.g. NTLC, SLBC).")
 
 
 class ScrapeBrvmInput(BaseModel):
-    """Input for scraping BRVM (no args)."""
-
     pass
 
 
-# --- Service tools ---
 class GetStockMetricsInput(BaseModel):
-    """Input for getting current or historical price, volume, growth, loss."""
-
     symbol: str = Field(description="Stock symbol (e.g. NTLC).")
     at_time: str | None = Field(
         default=None,
@@ -50,16 +38,12 @@ class GetStockMetricsInput(BaseModel):
 
 
 class GetTimeseriesInput(BaseModel):
-    """Input for getting time series (for charts) over a date range."""
-
     symbol: str = Field(description="Stock symbol.")
     start_date: str = Field(description="Start date YYYY-MM-DD.")
     end_date: str = Field(description="End date YYYY-MM-DD.")
 
 
 class CompareStocksInput(BaseModel):
-    """Input for comparing two stocks."""
-
     symbol_a: str = Field(description="First stock symbol.")
     symbol_b: str = Field(description="Second stock symbol.")
     period: str = Field(default="veille", description="Palmarès period.")
@@ -70,23 +54,16 @@ class CompareStocksInput(BaseModel):
 
 
 class ComputeMetricsInput(BaseModel):
-    """Input for computing average, median, min, max, stdev over a period."""
-
     symbol: str = Field(description="Stock symbol.")
     start_date: str | None = Field(default=None, description="Start date YYYY-MM-DD; omit for full series.")
     end_date: str | None = Field(default=None, description="End date YYYY-MM-DD; omit for full series.")
 
 
-# --- Timeseries CSV updater ---
 class EnsureTimeseriesInput(BaseModel):
-    """Check and update CSV for one company (fetch if missing or stale)."""
-
     symbol: str = Field(description="Stock symbol (e.g. NTLC, SLBC).")
 
 
 class ListTimeseriesStatusInput(BaseModel):
-    """List status of all company CSVs (path, last_date, up_to_date). Optional symbols to check."""
-
     symbols: str | None = Field(
         default=None,
         description="Comma-separated symbols to check; omit to list all CSVs in data/series.",
@@ -94,15 +71,10 @@ class ListTimeseriesStatusInput(BaseModel):
 
 
 class EnsureAllTimeseriesInput(BaseModel):
-    """Update CSVs for all configured target companies (daily job). No args."""
-
     pass
 
 
-# --- Charts ---
 class PlotCompanyChartInput(BaseModel):
-    """Plot price chart for a company over a date range. Saves image to temp file; path returned."""
-
     symbol: str = Field(description="Stock symbol.")
     start_date: str = Field(description="Start date YYYY-MM-DD.")
     end_date: str = Field(description="End date YYYY-MM-DD.")
@@ -112,43 +84,29 @@ class PlotCompanyChartInput(BaseModel):
     )
 
 
-# --- News (ground truth from Rich Bourse, Sika Finance, BRVM) ---
 class GetCompanyNewsInput(BaseModel):
-    """Get latest news for a BRVM company from Rich Bourse."""
-
     symbol: str = Field(description="Stock symbol or company name (e.g. PALC, Palm CI).")
     limit: int = Field(default=10, description="Max number of news items to return.")
 
 
 class GetMarketNewsInput(BaseModel):
-    """Get BRVM market news from Sika Finance (ACTUALITES DE LA BOURSE). No symbol required."""
-
     limit: int = Field(default=15, description="Max number of news items to return.")
 
 
 class GetBrvmAnnouncementsInput(BaseModel):
-    """Get BRVM official announcements (convocations AGO, PDFs). Optionally filter by company."""
-
     limit: int = Field(default=15, description="Max number of announcements to return.")
     company: str | None = Field(default=None, description="Optional: filter by symbol or company name.")
 
 
 class GetMarketOverviewInput(BaseModel):
-    """Get BRVM market overview: top stocks by volume, top gainers, top losers. BRVM-listed only."""
-
     top_n: int = Field(default=10, description="Number of stocks to return per category (default 10).")
 
 
 class GetBrvmBasicsInput(BaseModel):
-    """Get short BRVM and investing basics (what is BRVM, how to invest). No args."""
-
     pass
 
 
-# --- Portfolio / tracking / targets (require telegram_id from context) ---
 class PortfolioAddInput(BaseModel):
-    """Add or update a position in the user's portfolio."""
-
     telegram_id: int = Field(description="User Telegram ID (from context).")
     symbol: str = Field(description="BRVM symbol (e.g. NTLC, SLBC).")
     buy_price: float = Field(description="Buy price in F CFA.")
@@ -157,47 +115,33 @@ class PortfolioAddInput(BaseModel):
 
 
 class PortfolioRemoveInput(BaseModel):
-    """Remove a symbol from the user's portfolio."""
-
     telegram_id: int = Field(description="User Telegram ID.")
     symbol: str = Field(description="BRVM symbol to remove.")
 
 
 class GetPortfolioInput(BaseModel):
-    """Get user portfolio with current prices and gain/loss per position."""
-
     telegram_id: int = Field(description="User Telegram ID.")
 
 
 class GetPortfolioSummaryInput(BaseModel):
-    """Get portfolio summary: total cost, total value, overall gain/loss %."""
-
     telegram_id: int = Field(description="User Telegram ID.")
 
 
 class TrackingAddInput(BaseModel):
-    """Add a symbol to the user's tracking list."""
-
     telegram_id: int = Field(description="User Telegram ID.")
     symbol: str = Field(description="BRVM symbol to track.")
 
 
 class TrackingRemoveInput(BaseModel):
-    """Remove a symbol from the user's tracking list."""
-
     telegram_id: int = Field(description="User Telegram ID.")
     symbol: str = Field(description="BRVM symbol to remove.")
 
 
 class GetTrackingInput(BaseModel):
-    """List symbols the user is tracking."""
-
     telegram_id: int = Field(description="User Telegram ID.")
 
 
 class TargetAddInput(BaseModel):
-    """Set a price alert: notify when symbol goes above or below target."""
-
     telegram_id: int = Field(description="User Telegram ID.")
     symbol: str = Field(description="BRVM symbol.")
     target_price: float = Field(description="Target price in F CFA.")
@@ -205,13 +149,9 @@ class TargetAddInput(BaseModel):
 
 
 class TargetRemoveInput(BaseModel):
-    """Remove a price alert for a symbol."""
-
     telegram_id: int = Field(description="User Telegram ID.")
     symbol: str = Field(description="BRVM symbol.")
 
 
 class GetTargetsInput(BaseModel):
-    """List user's price alerts."""
-
     telegram_id: int = Field(description="User Telegram ID.")

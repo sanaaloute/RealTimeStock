@@ -12,6 +12,11 @@ langgraph-checkpoint-sqlite
 chromadb
 # Charts
 matplotlib
+# Chat API
+fastapi
+uvicorn[standard]
+httpx
+
 # Telegram bot (job-queue for price target alerts)
 python-telegram-bot[job-queue]
 # Voice to text

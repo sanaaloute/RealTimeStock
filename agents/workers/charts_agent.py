@@ -1,4 +1,4 @@
-"""Charts worker: plot company price over a period (line/area); returns image path for supervisor."""
+"""Charts worker: plot stock price (line/area), returns image path."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from ..tools.stock_tools import get_timeseries_tool, plot_company_chart_tool
 
 
 def get_charts_agent_system() -> str:
-    """System prompt for the charts worker."""
     return f"""You are the BRVM charts worker. You produce a price chart (line or area) for a BRVM stock over a date range. You must call get_timeseries_tool if needed, then plot_company_chart_tool to generate the image.
 
 **{get_time_prefix()}**
@@ -28,7 +27,6 @@ CHARTS_TOOLS = [
 
 
 def _extract_image_path_from_messages(messages: list) -> str | None:
-    """Scan tool messages for plot_company_chart result containing image_path."""
     for m in reversed(messages):
         if isinstance(m, ToolMessage) and m.name == "plot_company_chart" and m.content:
             try:
@@ -38,7 +36,6 @@ def _extract_image_path_from_messages(messages: list) -> str | None:
                     return path
             except (json.JSONDecodeError, TypeError):
                 pass
-            # Fallback: content might be path-like
             s = str(m.content).strip()
             if s.endswith(".png") and "/" in s:
                 return s
@@ -46,6 +43,5 @@ def _extract_image_path_from_messages(messages: list) -> str | None:
 
 
 def create_charts_agent(model: str = "qwen3:8b"):
-    """Build ReAct agent with get_timeseries and plot_company_chart (returns image path in tool result)."""
     llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, CHARTS_TOOLS)

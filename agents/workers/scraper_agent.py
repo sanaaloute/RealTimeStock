@@ -1,4 +1,4 @@
-"""Scraper worker agent: fetches data from Sika Finance, Rich Bourse, BRVM."""
+"""Scraper worker: Sika Finance, Rich Bourse, BRVM."""
 from __future__ import annotations
 
 from langgraph.prebuilt import create_react_agent
@@ -31,6 +31,5 @@ SCRAPER_TOOLS = [
 
 
 def create_scraper_agent(model: str = "qwen3:8b"):
-    """Build ReAct agent with scraper tools. Use for: fetch palmarès, variation, timeseries CSV, BRVM."""
     llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, SCRAPER_TOOLS)

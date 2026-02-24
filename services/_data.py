@@ -1,4 +1,4 @@
-"""Shared data access: palmarès (Rich Bourse) and time series from CSV."""
+"""Data access: palmarès (Rich Bourse), time series CSV."""
 from __future__ import annotations
 
 import csv
@@ -23,7 +23,6 @@ def fetch_palmares(period: str = "veille", progression: str = "tout") -> list[di
 
 
 def _find_series_csv(symbol: str) -> Path | None:
-    """Return path to a CSV for symbol if it exists (any date range). Prefer newest by filename date."""
     symbol = symbol.strip().upper()
     if not DATA_SERIES_DIR.exists():
         return None
@@ -44,7 +43,6 @@ def _find_series_csv(symbol: str) -> Path | None:
 
 
 def get_series_status(symbol: str) -> dict[str, Any]:
-    """Return status for one symbol: path, last_date, up_to_date (last_date >= today - MAX_AGE_DAYS)."""
     symbol = symbol.strip().upper()
     out: dict[str, Any] = {"symbol": symbol, "path": None, "last_date": None, "up_to_date": False}
     p = _find_series_csv(symbol)
@@ -63,7 +61,6 @@ def get_series_status(symbol: str) -> dict[str, Any]:
 
 
 def ensure_series_csv(symbol: str) -> Path | None:
-    """Ensure we have a series CSV for symbol; fetch if missing. Returns path or None."""
     p = _find_series_csv(symbol)
     if p is not None:
         return p
@@ -75,7 +72,6 @@ def ensure_series_csv(symbol: str) -> Path | None:
 
 
 def ensure_timeseries_up_to_date(symbol: str) -> dict[str, Any]:
-    """Check CSV for symbol; if missing or stale (older than MAX_AGE_DAYS), fetch and save. Return status."""
     status = get_series_status(symbol)
     if status["up_to_date"] and status["path"]:
         return {"symbol": symbol, "action": "skipped", "path": status["path"], "message": "Already up to date."}
@@ -93,7 +89,6 @@ def ensure_timeseries_up_to_date(symbol: str) -> dict[str, Any]:
 
 
 def list_series_status(symbols: list[str] | None = None) -> list[dict[str, Any]]:
-    """List status for each symbol. If symbols is None, scan data/series for all SYMBOL_*.csv."""
     if symbols:
         return [get_series_status(s) for s in symbols]
     if not DATA_SERIES_DIR.exists():
@@ -109,7 +104,6 @@ def list_series_status(symbols: list[str] | None = None) -> list[dict[str, Any]]
 
 
 def run_daily_timeseries_update(symbols: list[str]) -> list[dict[str, Any]]:
-    """Update CSVs for all symbols (call once per day). Returns list of per-symbol results."""
     results: list[dict[str, Any]] = []
     for symbol in symbols:
         results.append(ensure_timeseries_up_to_date(symbol))
@@ -123,11 +117,6 @@ def load_series(
     *,
     fetch_if_missing: bool = True,
 ) -> list[dict[str, Any]]:
-    """
-    Load time series for symbol from data/series CSV.
-    Returns list of {"date": date, "price": float}. Optional start/end filter (inclusive).
-    If no CSV exists and fetch_if_missing, runs timeseries scraper first.
-    """
     if fetch_if_missing:
         ensure_series_csv(symbol)
     p = _find_series_csv(symbol)

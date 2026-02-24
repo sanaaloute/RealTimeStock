@@ -1,4 +1,4 @@
-"""Redact agent output to plain text for Telegram: no markdown, no *, no tables; lists with '-'."""
+"""Redact agent output to plain text for Telegram."""
 from __future__ import annotations
 
 import re
@@ -38,24 +38,18 @@ Rewrite as plain text:
 
 
 def _strip_internal_refs(text: str) -> str:
-    """Remove lines that mention file paths or tool names (internal details)."""
     lines = text.split("\n")
     out = [ln for ln in lines if not _PATH_LINE.search(ln) and not _TOOL_LINE.search(ln)]
     return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
 
 
 def _to_plain_text(text: str) -> str:
-    """Remove markdown bold (**) so the final message is plain text."""
     if not text:
         return text
     return re.sub(r"\*\*([^*]*)\*\*", r"\1", text).replace("**", "")
 
 
 def redact_for_telegram(raw_output: str, model: str | None = None) -> str:
-    """
-    Use a dedicated LLM instance and prompt to convert agent output to plain text
-    (no markdown, no *, no tables; lists with -). Removes references to image paths and tools.
-    """
     raw = (raw_output or "").strip()
     if not raw:
         return "No answer."

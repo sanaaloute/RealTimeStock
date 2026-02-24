@@ -1,4 +1,4 @@
-"""Help message shown to new users and when the user asks for help."""
+"""Help message for new users and /help."""
 
 HELP_MESSAGE = """Welcome to the BRVM Stock Assistant.
 
@@ -22,5 +22,4 @@ You can type or send a voice message. Say "help" anytime to see this message aga
 
 
 def get_help_message() -> str:
-    """Return the help text shown to users."""
     return HELP_MESSAGE.strip()

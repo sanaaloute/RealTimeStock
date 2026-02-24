@@ -13,6 +13,11 @@ chromadb>=0.4.0
 # Charts
 matplotlib>=3.7.0
 
+# Chat API (bot talks to API, not agents directly)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+httpx>=0.27.0
+
 # Telegram bot (job-queue for price target alerts)
 python-telegram-bot[job-queue]>=21.0
 # Voice to text (optional: install ffmpeg for ogg/mp3 support)

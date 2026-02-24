@@ -1,15 +1,19 @@
-from services import get_stock_metrics, get_timeseries, compare_stocks, compute_metrics
+"""Ollama Cloud example. Uses same config as agent/bot (.env: OLLAMA_CLOUD=true, OLLAMA_API_KEY)."""
+import config
 
-# Current (or at a given time) price, volume, growth, loss
-get_stock_metrics("NTLC")                    # current from palmarès
-get_stock_metrics("NTLC", at_time="2025-06-01")  # historical price from series
+if not config.OLLAMA_CLOUD or not config.OLLAMA_API_KEY:
+    raise SystemExit(
+        "OLLAMA_CLOUD=true and OLLAMA_API_KEY required. Add to .env (from https://ollama.com/settings/keys)"
+    )
 
-# Time series for a range (e.g. for a chart)
-get_timeseries("NTLC", "2025-03-01", "2025-06-30")
+from ollama import Client
 
-# Compare two stocks
-print(compare_stocks("NTLC", "SLBC", period="veille"))
-print(compare_stocks("NTLC", "SLBC", period_price_date="2025-05-15"))  # + price at that date
+client = Client(
+    host=config.OLLAMA_CLOUD_HOST,
+    headers={"Authorization": f"Bearer {config.OLLAMA_API_KEY}"},
+)
 
-# Stats over a period
-print(compute_metrics("NTLC", "2025-01-01", "2025-12-31"))  # or no dates = full series
+messages = [{"role": "user", "content": "Why is the sky blue?"}]
+
+for part in client.chat(config.OLLAMA_CLOUD_MODEL, messages=messages, stream=True):
+    print(part["message"]["content"], end="", flush=True)
