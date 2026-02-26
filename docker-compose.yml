@@ -25,7 +25,7 @@ services:
     restart: unless-stopped
 
   # Optional: run Ollama in Docker. Start with: docker compose up -d ollama
-  # Then: docker compose exec ollama ollama pull qwen3:8b
+  # Then: docker compose exec ollama ollama pull glm-5:cloud
   # In .env set: OLLAMA_BASE_URL=http://ollama:11434
   ollama:
     image: ollama/ollama:latest

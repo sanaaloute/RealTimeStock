@@ -29,6 +29,6 @@ def get_portfolio_agent_system(telegram_id: int) -> str:
 Present results clearly. Do not mention tool names or internal details in the final answer. When the user asks to remove a stock "from my portfolio and tracking", call both portfolio_remove and tracking_remove (and target_remove if they have an alert for that symbol)."""
 
 
-def create_portfolio_agent(model: str = "qwen3:8b"):
+def create_portfolio_agent(model: str = "glm-5:cloud"):
     llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, PORTFOLIO_TOOLS)

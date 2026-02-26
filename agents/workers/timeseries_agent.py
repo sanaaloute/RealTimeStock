@@ -29,6 +29,6 @@ TIMESERIES_TOOLS = [
 ]
 
 
-def create_timeseries_agent(model: str = "qwen3:8b"):
+def create_timeseries_agent(model: str = "glm-5:cloud"):
     llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, TIMESERIES_TOOLS)

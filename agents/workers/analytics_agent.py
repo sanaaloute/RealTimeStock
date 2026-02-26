@@ -9,6 +9,7 @@ from ..tools.stock_tools import (
     compare_stocks_tool,
     compute_metrics_tool,
     get_brvm_basics_tool,
+    get_company_info_tool,
     get_market_overview_tool,
     get_stock_metrics_tool,
     get_timeseries_tool,
@@ -27,8 +28,9 @@ def get_analytics_agent_system() -> str:
 - compare_stocks_tool: compare two BRVM symbols.
 - compute_metrics_tool: average/median/min/max over a period.
 - get_brvm_basics_tool: what is BRVM, how to invest on BRVM (FAQ).
+- get_company_info_tool: Get full company name and sector for a symbol. Use when explaining what a company does or its sector (e.g. Services Financiers, Énergie, Consommation).
 
-Use only BRVM symbols from tool results. Present numbers clearly. All amounts in F CFA. Do not mention tool names or file paths in the final answer."""
+Use only BRVM symbols from tool results. When mentioning companies, use get_company_info_tool to get accurate names and sectors—do not guess. Present numbers clearly. All amounts in F CFA. Do not mention tool names or file paths in the final answer."""
 
 
 ANALYTICS_TOOLS = [
@@ -38,9 +40,10 @@ ANALYTICS_TOOLS = [
     compare_stocks_tool,
     compute_metrics_tool,
     get_brvm_basics_tool,
+    get_company_info_tool,
 ]
 
 
-def create_analytics_agent(model: str = "qwen3:8b"):
+def create_analytics_agent(model: str = "glm-5:cloud"):
     llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, ANALYTICS_TOOLS)

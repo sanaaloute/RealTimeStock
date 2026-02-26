@@ -9,6 +9,7 @@ from typing import Any, Callable, Literal
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph
 
+import config
 from agents.llm import get_llm
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -214,7 +215,8 @@ def route_after_supervisor(
     return "__end__"
 
 
-def create_master_graph(model: str = "qwen3:8b", checkpointer: Any | None = None) -> "CompiledStateGraph":
+def create_master_graph(model: str | None = None, checkpointer: Any | None = None) -> "CompiledStateGraph":
+    model = model or config.OLLAMA_MODEL
     builder = StateGraph(AgentState)
 
     builder.add_node("nlu", create_nlu_node(model))
@@ -245,11 +247,12 @@ def create_master_graph(model: str = "qwen3:8b", checkpointer: Any | None = None
 
 def run_agent(
     query: str,
-    model: str = "qwen3:8b",
+    model: str | None = None,
     thread_id: str | None = None,
     telegram_user_id: int | None = None,
     checkpointer: Any | None = None,
 ) -> dict:
+    model = model or config.OLLAMA_MODEL
     graph = create_master_graph(model=model, checkpointer=checkpointer)
     run_config = {"configurable": {"thread_id": thread_id or "default"}}
     current = graph.get_state(run_config)

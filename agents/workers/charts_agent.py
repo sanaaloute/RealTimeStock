@@ -42,6 +42,6 @@ def _extract_image_path_from_messages(messages: list) -> str | None:
     return None
 
 
-def create_charts_agent(model: str = "qwen3:8b"):
+def create_charts_agent(model: str = "glm-5:cloud"):
     llm = get_llm(model=model, temperature=0)
     return create_react_agent(llm, CHARTS_TOOLS)
