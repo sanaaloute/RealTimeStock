@@ -1,50 +1,51 @@
-# BRVM listed companies: SYMBOL<Tab>Company name (one per line). Used by NLU to map user input and avoid hallucination.
-# Format: SYMBOL	Company name or common names (pipe-separated aliases optional)
-# Source: BRVM official list (brvm.org). Update when new listings occur.
-ABJC	Servair
-BICB	BIC Bénin
-BICC	BIC Côte d'Ivoire
-BNBC	Bernabé
-BOAB	Bank of Africa Bénin
-BOABF	Bank of Africa Burkina Faso
-BOAC	Bank of Africa Côte d'Ivoire
-BOAM	Bank of Africa Mali
-BOAN	Bank of Africa Niger
-BOAS	Bank of Africa Sénégal
-CABC	Sicable
-CBIBF	Coris Bank International Burkina Faso
-CFAC	CFAO Motors
-CIEC	CIE Compagnie Ivoirienne d'Electricité
-ECOC	Ecobank
-ETIT	ETIT
-FTSC	Filtisac
-LNBB	Loterie Nationale du Bénin
-NEIC	NEIC
-NSBC	NSIA Banque
-NTLC	Nestlé Côte d'Ivoire
-ONTBF	Onatel Burkina
-ORAC	Oragroup
-ORGT	ORGT
-PALC	Palm CI
-PRSC	Tractafric
-SAFC	SAFC
-SCRC	Coris Bank
-SDCC	SODECI
-SDSC	SDSC
-SEMC	Eviosys
-SGBC	Société Générale Burkina
-SHEC	Vivo Energy
-SIBC	SIBC
-SICC	Sicor
-SIVC	Air Liquide
-SLBC	Solibra
-SMBC	SMB Société Minière
-SNTS	Sonatel
-SOGC	SOGB
-SPHC	SAPH
-STAC	Setao
-STBC	SITAB
-TTLC	Total Côte d'Ivoire
-TTLS	Total Energies
-UNLC	Unilever Côte d'Ivoire
-UNXC	UNXC
+# BRVM listed companies: SYMBOL<Tab>Company name<Tab>Sector (optional)
+# Format: SYMBOL	Company name or common names (pipe-separated aliases)	Sector
+# Source: BRVM official list (brvm.org). Sectors: Services Financiers, Énergie, Télécommunications,
+#   Services Publics, Consommation, Industriels, Distribution. Update when new listings occur.
+ABJC	Servair (Abidjan Catering)	Distribution
+BICB	BIC Bénin	Services Financiers
+BICC	BIC Côte d'Ivoire	Services Financiers
+BNBC	Bernabé	Distribution
+BOAB	Bank of Africa Bénin	Services Financiers
+BOABF	Bank of Africa Burkina Faso	Services Financiers
+BOAC	Bank of Africa Côte d'Ivoire	Services Financiers
+BOAM	Bank of Africa Mali	Services Financiers
+BOAN	Bank of Africa Niger	Services Financiers
+BOAS	Bank of Africa Sénégal	Services Financiers
+CABC	Sicable	Industriels
+CBIBF	Coris Bank International Burkina Faso	Services Financiers
+CFAC	CFAO Motors	Distribution
+CIEC	CIE Compagnie Ivoirienne d'Electricité	Services Publics
+ECOC	Ecobank Côte d'Ivoire	Services Financiers
+ETIT	Ecobank Transnational Incorporated	Services Financiers
+FTSC	Filtisac	Industriels
+LNBB	Loterie Nationale du Bénin	Consommation
+NEIC	Nouvelles Editions Ivoiriennes (NEI-CEDA)	Industriels
+NSBC	NSIA Banque	Services Financiers
+NTLC	Nestlé Côte d'Ivoire	Consommation
+ONTBF	Onatel Burkina	Télécommunications
+ORAC	Oragroup	Services Financiers
+ORGT	Oragroup Togo	Services Financiers
+PALC	Palm CI	Consommation
+PRSC	Tractafric	Distribution
+SAFC	Société Africaine de Crédit Automobile (SAFCA)	Services Financiers
+SCRC	Coris Bank Côte d'Ivoire	Services Financiers
+SDCC	SODECI (eau)	Services Publics
+SDSC	SDV Côte d'Ivoire (logistics)	Distribution
+SEMC	Eviosys (emballage métallique)	Industriels
+SGBC	Société Générale Burkina	Services Financiers
+SHEC	Vivo Energy	Énergie
+SIBC	Société Ivoirienne de Banque	Services Financiers
+SICC	Sicor (coco)	Consommation
+SIVC	Air Liquide	Industriels
+SLBC	Solibra (brasseries)	Consommation
+SMBC	SMB Société Minière	Industriels
+SNTS	Sonatel	Télécommunications
+SOGC	Société des Caoutchoucs de Grand-Béréby	Consommation
+SPHC	SAPH (hévéa)	Consommation
+STAC	Setao (BTP)	Industriels
+STBC	SITAB (tabac)	Consommation
+TTLC	Total Côte d'Ivoire	Énergie
+TTLS	Total Energies	Énergie
+UNLC	Unilever Côte d'Ivoire	Consommation
+UNXC	Uniwax (textiles)	Consommation

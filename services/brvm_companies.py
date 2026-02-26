@@ -8,9 +8,16 @@ from typing import Any
 BRVM_COMPANIES_FILE = Path(__file__).resolve().parent.parent / "data" / "brvm_companies.txt"
 
 _symbol_to_name: dict[str, str] = {}
+_symbol_to_sector: dict[str, str] = {}
 _name_to_symbol: dict[str, str] = {}
 _valid_symbols: set[str] = set()
 _loaded = False
+
+# Common words that cause wrong symbol resolution when mapped by single word
+_STOP_WORDS = frozenset({
+    "bank", "africa", "côte", "d'ivoire", "société", "de", "du", "des", "ci", "internationale",
+    "international", "bénin", "burkina", "faso", "mali", "niger", "sénégal", "togo",
+})
 
 
 def _normalize(s: str) -> str:
@@ -19,10 +26,11 @@ def _normalize(s: str) -> str:
 
 
 def _load() -> None:
-    global _symbol_to_name, _name_to_symbol, _valid_symbols, _loaded
+    global _symbol_to_name, _symbol_to_sector, _name_to_symbol, _valid_symbols, _loaded
     if _loaded:
         return
     _symbol_to_name = {}
+    _symbol_to_sector = {}
     _name_to_symbol = {}
     _valid_symbols = set()
     if not BRVM_COMPANIES_FILE.exists():
@@ -33,20 +41,23 @@ def _load() -> None:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            parts = line.split("\t", 1)
+            parts = [p.strip() for p in line.split("\t")]
             if len(parts) < 2:
                 continue
-            symbol = parts[0].strip().upper()
-            name_part = parts[1].strip()
+            symbol = parts[0].upper()
+            name_part = parts[1]
+            sector = parts[2] if len(parts) >= 3 else ""
             _valid_symbols.add(symbol)
             _symbol_to_name[symbol] = name_part
-            # Map main name and symbol (as name) to symbol
+            if sector:
+                _symbol_to_sector[symbol] = sector
+            # Map full name and symbol to symbol
             _name_to_symbol[_normalize(name_part)] = symbol
             _name_to_symbol[_normalize(symbol)] = symbol
-            # Map first word or short names (e.g. "Nestlé", "Solibra")
-            for word in name_part.replace(",", " ").replace("|", " ").split():
+            # Map distinctive words only (avoid "Bank" -> wrong bank, "Côte" -> wrong company)
+            for word in name_part.replace(",", " ").replace("|", " ").replace("(", " ").replace(")", " ").split():
                 w = word.strip()
-                if len(w) >= 2 and w.upper() != symbol:
+                if len(w) >= 3 and w.upper() != symbol and _normalize(w) not in _STOP_WORDS:
                     _name_to_symbol[_normalize(w)] = symbol
     _loaded = True
 
@@ -61,6 +72,12 @@ def get_symbol_to_name() -> dict[str, str]:
     """Return mapping symbol -> company name."""
     _load()
     return dict(_symbol_to_name)
+
+
+def get_symbol_to_sector() -> dict[str, str]:
+    """Return mapping symbol -> sector (empty string if not set)."""
+    _load()
+    return dict(_symbol_to_sector)
 
 
 def get_name_to_symbol() -> dict[str, str]:
@@ -88,11 +105,17 @@ def resolve_to_symbol(mention: str) -> str | None:
 
 
 def format_list_for_prompt() -> str:
-    """Format the BRVM list for inclusion in NLU system prompt (symbol -> name, one per line)."""
+    """Format the BRVM list for inclusion in NLU system prompt (symbol -> name [sector], one per line)."""
     _load()
     if not _symbol_to_name:
         return "No BRVM company list loaded."
-    lines = [f"- {sym}: {name}" for sym, name in sorted(_symbol_to_name.items())]
+    lines = []
+    for sym, name in sorted(_symbol_to_name.items()):
+        sector = _symbol_to_sector.get(sym, "")
+        if sector:
+            lines.append(f"- {sym}: {name} ({sector})")
+        else:
+            lines.append(f"- {sym}: {name}")
     return "\n".join(lines)
 
 

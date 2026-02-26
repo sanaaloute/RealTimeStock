@@ -21,10 +21,12 @@ from services.news import (
 from services.plots import plot_timeseries as plot_timeseries_service
 from services.market_overview import get_brvm_market_overview
 from services.brvm_basics import get_brvm_basics
+from services.brvm_companies import get_symbol_to_name, get_symbol_to_sector, get_valid_symbols
 
 import config
 from .schemas import (
     CompareStocksInput,
+    GetCompanyInfoInput,
     ComputeMetricsInput,
     EnsureAllTimeseriesInput,
     EnsureTimeseriesInput,
@@ -139,6 +141,19 @@ def _get_market_overview(top_n: int = 10, **kwargs: Any) -> str:
 
 def _get_brvm_basics(**kwargs: Any) -> str:
     return get_brvm_basics()
+
+
+def _get_company_info(symbol: str, **kwargs: Any) -> str:
+    sym = (symbol or "").strip().upper()
+    valid = get_valid_symbols()
+    if sym not in valid:
+        return json.dumps({"error": f"Unknown symbol: {symbol}. Use a valid BRVM symbol."}, ensure_ascii=False)
+    name = get_symbol_to_name().get(sym, sym)
+    sector = get_symbol_to_sector().get(sym, "")
+    return json.dumps(
+        {"symbol": sym, "company_name": name, "sector": sector or "Non spécifié"},
+        ensure_ascii=False,
+    )
 
 
 def _plot_company_chart(
@@ -283,4 +298,11 @@ get_brvm_basics_tool = StructuredTool.from_function(
     name="get_brvm_basics",
     description="Get short text about BRVM (what it is, how to invest on BRVM). Use for questions like 'what is BRVM', 'how to invest in BRVM', 'how does the BRVM work'.",
     args_schema=GetBrvmBasicsInput,
+)
+
+get_company_info_tool = StructuredTool.from_function(
+    func=_get_company_info,
+    name="get_company_info",
+    description="Get full company name and sector for a BRVM symbol. Use when you need to explain what a company does or its sector of activity.",
+    args_schema=GetCompanyInfoInput,
 )

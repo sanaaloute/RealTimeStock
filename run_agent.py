@@ -10,7 +10,7 @@ from agents.graph import CHAT_MEMORY_DB
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run BRVM stock master agent (scraper + analytics workers).")
     parser.add_argument("query", nargs="?", default="", help="User question (or read from stdin).")
-    parser.add_argument("--model", default="qwen3:8b", help="Ollama model name.")
+    parser.add_argument("--model", default=config.OLLAMA_MODEL, help="Ollama model name.")
     parser.add_argument("--no-memory", action="store_true", help="Disable persistent chat memory for this run.")
     args = parser.parse_args()
 

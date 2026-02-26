@@ -106,6 +106,10 @@ class GetBrvmBasicsInput(BaseModel):
     pass
 
 
+class GetCompanyInfoInput(BaseModel):
+    symbol: str = Field(description="BRVM symbol (e.g. NTLC, SLBC) to get full name and sector.")
+
+
 class PortfolioAddInput(BaseModel):
     telegram_id: int = Field(description="User Telegram ID (from context).")
     symbol: str = Field(description="BRVM symbol (e.g. NTLC, SLBC).")

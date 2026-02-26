@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from ._data import fetch_palmares
-from .brvm_companies import get_valid_symbols, get_symbol_to_name
+from .brvm_companies import get_valid_symbols, get_symbol_to_name, get_symbol_to_sector
 
 
 def _filter_brvm(stocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -21,10 +21,11 @@ def get_brvm_market_overview(top_n: int = 10) -> dict[str, Any]:
     stocks = fetch_palmares(period="veille", progression="tout")
     brvm_only = _filter_brvm(stocks)
     symbol_to_name = get_symbol_to_name()
+    symbol_to_sector = get_symbol_to_sector()
 
     def _enrich(s: dict[str, Any]) -> dict[str, Any]:
         sym = (s.get("symbol") or "").strip().upper()
-        return {
+        row = {
             "symbol": sym,
             "company_name": symbol_to_name.get(sym) or s.get("name") or sym,
             "volume": s.get("volume"),
@@ -32,6 +33,10 @@ def get_brvm_market_overview(top_n: int = 10) -> dict[str, Any]:
             "variation_pct": s.get("variation_pct"),
             "capitalisation": s.get("capitalisation"),
         }
+        sector = symbol_to_sector.get(sym)
+        if sector:
+            row["sector"] = sector
+        return row
 
     enriched = [_enrich(s) for s in brvm_only]
 

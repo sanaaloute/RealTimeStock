@@ -85,7 +85,7 @@ RealTimeStock/
 
    - `TAVILY_API_KEY` — [tavily.com](https://tavily.com)
 
-   For the agent and Telegram bot, run Ollama with a model (e.g. `ollama run qwen3:8b`).
+   For the agent and Telegram bot, run Ollama with a model (e.g. `ollama run glm-5:cloud` or use Ollama Cloud).
 
    For the Telegram bot:
 
