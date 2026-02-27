@@ -14,7 +14,7 @@ import sys
 from typing import Any
 
 import config
-from scrapers import SikaFinanceScraper, RichBourseScraper, RichBourseTimeseriesScraper, BRVMScraper
+from app.scrapers import SikaFinanceScraper, RichBourseScraper, RichBourseTimeseriesScraper, BRVMScraper
 
 logging.basicConfig(
     level=logging.INFO,

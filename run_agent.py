@@ -3,8 +3,8 @@ import argparse
 import sys
 
 import config
-from agents import run_agent
-from agents.graph import CHAT_MEMORY_DB
+from app.agents import run_agent
+from app.agents.graph import CHAT_MEMORY_DB
 
 
 def main() -> int:

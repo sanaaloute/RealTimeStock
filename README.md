@@ -8,52 +8,54 @@ Scrape and query BRVM (Bourse Régionale des Valeurs Mobilières) / West African
 
 ```
 RealTimeStock/
-├── api/
-│   └── chat.py           # FastAPI: bot → API → agents (hides internal errors)
-├── agents/
-│   ├── workers/
+├── app/
+│   ├── agents/           # LangGraph agents (flattened: NLU, scraper, analytics, charts, news, portfolio)
 │   │   ├── analytics_agent.py
 │   │   ├── charts_agent.py
+│   │   ├── graph.py
+│   │   ├── llm.py
 │   │   ├── news_agent.py
 │   │   ├── nlu_agent.py
 │   │   ├── portfolio_agent.py
 │   │   ├── scraper_agent.py
-│   │   └── timeseries_agent.py
+│   │   ├── state.py
+│   │   ├── timeseries_agent.py
+│   │   └── utils.py
+│   ├── api/
+│   │   └── chat.py       # FastAPI: bot → API → agents (hides internal errors)
+│   ├── bot/
+│   │   ├── help.py
+│   │   ├── redact.py
+│   │   ├── telegram_bot.py
+│   │   └── voice_to_text.py
+│   ├── data/
+│   │   ├── brvm_companies.txt
+│   │   └── series/
+│   ├── scrapers/
+│   │   ├── base.py
+│   │   ├── brvm.py
+│   │   ├── brvm_announcements.py
+│   │   ├── richbourse.py
+│   │   ├── richbourse_news.py
+│   │   ├── richbourse_timeseries.py
+│   │   ├── sikafinance.py
+│   │   └── sikafinance_news.py
 │   ├── tools/
 │   │   ├── portfolio_tools.py
 │   │   ├── schemas.py
 │   │   └── stock_tools.py
-│   ├── graph.py
-│   ├── llm.py
-│   └── state.py
-├── bot/
-│   ├── help.py
-│   ├── redact.py
-│   ├── telegram_bot.py
-│   └── voice_to_text.py
-├── scrapers/
-│   ├── base.py
-│   ├── brvm.py
-│   ├── brvm_announcements.py
-│   ├── richbourse.py
-│   ├── richbourse_news.py
-│   ├── richbourse_timeseries.py
-│   ├── sikafinance.py
-│   └── sikafinance_news.py
-├── services/
-│   ├── brvm_basics.py
-│   ├── brvm_companies.py
-│   ├── comparison.py
-│   ├── market_overview.py
-│   ├── metrics.py
-│   ├── news.py
-│   ├── plots.py
-│   ├── stock_metrics.py
-│   ├── timeseries.py
-│   └── user_db.py
-├── data/
-│   ├── brvm_companies.txt
-│   └── series/
+│   └── utils/            # Services (metrics, news, plots, user_db, etc.)
+│       ├── _data.py
+│       ├── brvm_basics.py
+│       ├── brvm_companies.py
+│       ├── comparison.py
+│       ├── market_overview.py
+│       ├── metrics.py
+│       ├── news.py
+│       ├── plots.py
+│       ├── stock_metrics.py
+│       ├── timeseries.py
+│       └── user_db.py
 ├── config.py
 ├── run_agent.py
 ├── run_api.py            # Chat API (bot talks to this)
