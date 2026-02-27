@@ -22,6 +22,7 @@ env
 
 # Data we don't need in image (series CSVs are created at runtime / volume)
 data/series/
+app/data/series/
 
 # Tests and dev
 tests

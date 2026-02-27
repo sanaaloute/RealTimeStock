@@ -7,8 +7,8 @@ import time
 import httpx
 
 import config
-from bot import build_application
-from services._data import run_daily_timeseries_update
+from app.bot import build_application
+from app.utils._data import run_daily_timeseries_update
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,7 +37,7 @@ def _daily_timeseries_job() -> None:
 async def _check_target_alerts(context) -> None:
     """Job: check price targets and send Telegram notifications to users whose target was reached."""
     try:
-        from services.user_db import check_targets_and_notify
+        from app.utils.user_db import check_targets_and_notify
         allowed = set(config.ALLOWED_TELEGRAM_IDS or [])
         for telegram_id, text in check_targets_and_notify():
             if telegram_id not in allowed:
