@@ -159,3 +159,22 @@ class TargetRemoveInput(BaseModel):
 
 class GetTargetsInput(BaseModel):
     telegram_id: int = Field(description="User Telegram ID.")
+
+
+# News tools (news_tools.py)
+class GetSikafinanceActualitesInput(BaseModel):
+    limit: int = Field(default=20, description="Max number of news items to return.")
+
+
+class GetSikafinanceCommuniquesInput(BaseModel):
+    limit: int = Field(default=20, description="Max number of communiqués to return.")
+    company: str | None = Field(default=None, description="Optional: filter by symbol or company name.")
+
+
+class GetRichboursePredictionInput(BaseModel):
+    symbol: str = Field(description="BRVM symbol (e.g. SOGC, NTLC, ORAC) for technical prediction.")
+
+
+class GetRichbourseDividendsInput(BaseModel):
+    limit: int = Field(default=50, description="Max number of dividend entries to return.")
+    symbol: str | None = Field(default=None, description="Optional: filter by symbol or company name.")

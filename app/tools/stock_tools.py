@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import StructuredTool  # pyright: ignore[reportMissingImports]
 
 from app.scrapers import BRVMScraper, RichBourseScraper, RichBourseTimeseriesScraper, SikaFinanceScraper
 from app.utils import compare_stocks, compute_metrics, get_stock_metrics, get_timeseries

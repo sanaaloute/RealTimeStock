@@ -1,4 +1,4 @@
-"""Run Telegram bot. Requires Chat API (run_api.py). Schedules: daily timeseries, price target alerts."""
+"""Run Telegram bot only (requires API). For API + bot together, use: python main.py"""
 import logging
 import sys
 import threading
@@ -72,14 +72,14 @@ def main() -> int:
             r = client.get(health_url)
             if r.status_code != 200:
                 logger.error(
-                    "Chat API at %s returned %s. Start the API first: python run_api.py",
+                    "Chat API at %s returned %s. Start the API first: python main.py or python run_api.py",
                     api_url,
                     r.status_code,
                 )
                 return 1
     except httpx.ConnectError as e:
         logger.error(
-            "Cannot reach Chat API at %s. Is it running? Start it with: python run_api.py\n"
+            "Cannot reach Chat API at %s. Is it running? Start it with: python main.py or python run_api.py\n"
             "If bot and API run on different machines, set BRVM_API_URL in .env to the API URL (e.g. http://your-server:8000).\n"
             "Error: %s",
             api_url,

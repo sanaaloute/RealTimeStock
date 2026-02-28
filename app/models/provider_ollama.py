@@ -1,4 +1,4 @@
-"""ChatOllama for agents. Local Ollama or Ollama Cloud (OLLAMA_CLOUD=true)."""
+"""Ollama LLM provider. Local or Ollama Cloud."""
 from __future__ import annotations
 
 from typing import Any
@@ -6,7 +6,7 @@ from typing import Any
 import config
 
 
-def get_llm(model: str | None = None, temperature: float = 0, **kwargs: Any):
+def create_ollama_llm(model: str | None = None, temperature: float = 0, **kwargs: Any):
     from langchain_ollama import ChatOllama
 
     model_name = model or config.OLLAMA_MODEL

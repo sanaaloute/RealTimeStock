@@ -7,6 +7,8 @@ requests
 pydantic
 langchain-core
 langchain-ollama
+langchain-groq
+langchain-openai
 langgraph
 langgraph-checkpoint-sqlite
 chromadb

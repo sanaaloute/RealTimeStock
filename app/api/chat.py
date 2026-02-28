@@ -5,7 +5,7 @@ import base64
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from pydantic import BaseModel
 
 import config
@@ -15,7 +15,7 @@ from app.bot.redact import redact_for_telegram
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="BRVM Chat API", version="1.0")
+router = APIRouter()
 
 
 def _extract_reply(messages: list) -> str:
@@ -38,8 +38,14 @@ def _extract_reply(messages: list) -> str:
 
 def _user_friendly_error(exc: Exception) -> str:
     err_str = str(exc).lower()
-    if "503" in err_str or "ssl" in err_str or "eof" in err_str or "connect" in err_str:
-        return "The AI service is temporarily unavailable. Try again in a moment."
+    if "recursion" in err_str:
+        return "The question was too complex. Try a simpler question."
+    if "404" in err_str:
+        return "Model not found. Pull it first: ollama pull <model>"
+    if "503" in err_str:
+        return "Ollama is busy or still loading the model. Wait a few seconds and try again."
+    if "ssl" in err_str or "eof" in err_str or "connect" in err_str:
+        return "The AI service is temporarily unavailable. Check that Ollama is running and try again."
     if "timeout" in err_str:
         return "The request took too long. Try again."
     return "Something went wrong. Please try again."
@@ -61,16 +67,17 @@ class ChatError(BaseModel):
     error: str
 
 
-@app.post("/chat")
+@router.post("/chat")
 def chat(req: ChatRequest) -> ChatResponse | ChatError:
     try:
         CHAT_MEMORY_DB.parent.mkdir(parents=True, exist_ok=True)
         from langgraph.checkpoint.sqlite import SqliteSaver
 
         with SqliteSaver.from_conn_string(str(CHAT_MEMORY_DB)) as checkpointer:
+            from app.models.llm import get_default_model
             result = run_agent(
                 query=req.query,
-                model=config.OLLAMA_MODEL,
+                model=get_default_model(),
                 thread_id=req.thread_id,
                 telegram_user_id=req.telegram_user_id,
                 checkpointer=checkpointer,
@@ -100,6 +107,10 @@ def chat(req: ChatRequest) -> ChatResponse | ChatError:
         return ChatError(error=_user_friendly_error(e))
 
 
-@app.get("/health")
+@router.get("/health")
 def health():
     return {"status": "ok"}
+
+
+app = FastAPI(title="BRVM Chat API", version="1.0")
+app.include_router(router)

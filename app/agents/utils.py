@@ -9,4 +9,7 @@ def get_current_time_str() -> str:
 
 
 def get_time_prefix() -> str:
-    return f"Current date and time: {get_current_time_str()}"
+    return (
+        f"For reference today's date is: {get_current_time_str()}. "
+        "Always consider the date to answer questions in order to get the up-to-date information."
+    )

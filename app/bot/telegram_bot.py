@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 MAX_MESSAGE_LENGTH = 4096  # Telegram limit
 MAX_CAPTION_LENGTH = 1024  # Telegram photo caption limit
 VOICE_LANGUAGE = "fr-FR"  # BRVM / West Africa; use "en-US" for English
-API_TIMEOUT = 120.0  # Agent can take a while
+API_TIMEOUT = 300.0  # Agent + LLM can take several minutes (NLU, supervisor, workers)
 
 
 def _is_allowed(user_id: int) -> bool:
@@ -123,6 +123,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         thread_id = str(update.effective_chat.id) if update.effective_chat else str(user_id)
         result = await _call_chat_api(query, thread_id, user_id)
+    except httpx.ReadTimeout:
+        logger.warning("API call timed out for user %s", user_id)
+        await status.edit_text("The AI took too long to respond. Try again.")
+        return
     except Exception as e:
         logger.exception("API call failed for user %s: %s", user_id, e)
         await status.edit_text("Could not reach the AI service. Try again in a moment.")

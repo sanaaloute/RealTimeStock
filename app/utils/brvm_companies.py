@@ -86,6 +86,12 @@ def get_name_to_symbol() -> dict[str, str]:
     return dict(_name_to_symbol)
 
 
+# Common abbreviations (user may type "SMB" for SMBC, etc.)
+_ABBREVS: dict[str, str] = {
+    "smb": "SMBC",  # SMB Société Minière
+}
+
+
 def resolve_to_symbol(mention: str) -> str | None:
     """
     Resolve user mention (symbol or company name) to official symbol.
@@ -98,7 +104,10 @@ def resolve_to_symbol(mention: str) -> str | None:
     upper = mention.upper()
     if upper in _valid_symbols:
         return upper
-    by_name = _name_to_symbol.get(_normalize(mention))
+    norm = _normalize(mention)
+    if norm in _ABBREVS:
+        return _ABBREVS[norm]
+    by_name = _name_to_symbol.get(norm)
     if by_name:
         return by_name
     return None
