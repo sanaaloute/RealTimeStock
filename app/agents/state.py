@@ -3,12 +3,18 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.messages import BaseMessage
 
-NextWorker = Literal["scraper", "analytics", "timeseries", "charts", "news", "portfolio", "FINISH"]
+WorkerName = Literal["scraper", "analytics", "timeseries", "charts", "news", "portfolio"]
+NextWorker = WorkerName | Literal["FINISH"]
 
 
 class AgentState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], "Chat messages"]
     next: NextWorker
+    """Single next worker (when multi_workers is empty)."""
+    multi_workers: list[WorkerName]
+    """List of workers to run. When non-empty, used instead of next."""
+    multi_parallel: bool
+    """If True, run multi_workers in parallel; else sequential."""
     image_path: str | None
     structured_data: dict[str, Any] | None
     clarification: str | None

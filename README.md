@@ -22,7 +22,8 @@ RealTimeStock/
 │   │   ├── timeseries_agent.py
 │   │   └── utils.py
 │   ├── api/
-│   │   └── chat.py       # FastAPI: bot → API → agents (hides internal errors)
+│   │   └── chat.py       # FastAPI chat routes
+│   ├── main.py            # FastAPI app + Telegram bot lifespan
 │   ├── bot/
 │   │   ├── help.py
 │   │   ├── redact.py
@@ -57,10 +58,11 @@ RealTimeStock/
 │       ├── timeseries.py
 │       └── user_db.py
 ├── config.py
+├── main.py               # Single entry: API + Telegram bot
 ├── run_agent.py
-├── run_api.py            # Chat API (bot talks to this)
+├── run_api.py            # API only (no bot)
 ├── run_scrapers.py
-├── run_telegram_bot.py
+├── run_telegram_bot.py   # Bot only (requires API)
 ├── requirements.txt
 ├── requirements-docker.txt
 ├── .env.example
@@ -101,14 +103,19 @@ RealTimeStock/
    python run_agent.py "Price of NTLC?" # CLI agent
    ```
 
-   **Telegram bot** (talks to Chat API; API runs agents and hides internal errors):
+   **API + Telegram bot** (single process):
 
    ```bash
-   # Terminal 1: start the Chat API
-   python run_api.py
+   python main.py
+   ```
 
-   # Terminal 2: start the bot
-   python run_telegram_bot.py
+   This starts the Chat API (port 8000) and the Telegram bot. Set `TELEGRAM_BOT_TOKEN` and `ALLOWED_TELEGRAM_IDS` in `.env`.
+
+   **Or run separately** (two terminals):
+
+   ```bash
+   python run_api.py           # API only
+   python run_telegram_bot.py  # Bot (requires API)
    ```
 
    Set `BRVM_API_URL` in `.env` if the API runs elsewhere (default `http://localhost:8000`).

@@ -12,6 +12,10 @@ SIKAFINANCE_PALMARES_URL = "https://www.sikafinance.com/marches/palmares"
 RICHBOURSE_URL = "https://www.richbourse.com/common/variation/index"
 RICHBOURSE_NEWS_URL = "https://www.richbourse.com/common/news/index"
 SIKAFINANCE_BOURSE_URL = "https://www.sikafinance.com/bourse/"
+SIKAFINANCE_ACTUALITES_URL = "https://www.sikafinance.com/marches/actualites_bourse_brvm"
+SIKAFINANCE_COMMUNIQUES_URL = "https://www.sikafinance.com/marches/communiques_brvm"
+RICHBOURSE_PREDICTION_URL = "https://www.richbourse.com/common/prevision-boursiere/synthese"
+RICHBOURSE_DIVIDENDE_URL = "https://www.richbourse.com/common/dividende/index"
 BRVM_URL = "https://www.brvm.org/"
 BRVM_ANNOUNCEMENTS_URL = "https://www.brvm.org/fr/emetteurs/type-annonces/convocations-assemblees-generales"
 
@@ -29,10 +33,31 @@ TIMESERIES_SYMBOLS: list[str] = [s.strip().upper() for s in _raw_symbols.split("
     "NTLC", "SLBC", "SNTS", "TTLS", "CFA", "BOAB", "BICC", "SDSC", "SDCC", "FTSC", "CAGC", "TLSR", "ETIT", "SGBC", "NEIC", "SMBC", "CBIBF", "ECOC", "BRVM"
 ]
 
+# LLM provider: ollama | groq | openrouter
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").strip().lower() or "ollama"
+# Optional: override model for current provider (e.g. LLM_MODEL=llama-3.1-70b)
+LLM_MODEL = os.getenv("LLM_MODEL", "").strip() or None
+# LLM temperature (0=deterministic, higher=more creative). Default 0.5
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7").strip() or "0.5")
+
+# Ollama
 OLLAMA_CLOUD_HOST = "https://ollama.com"
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "").strip() or None
 OLLAMA_CLOUD = os.getenv("OLLAMA_CLOUD", "").strip().lower() in ("1", "true", "yes")
 OLLAMA_CLOUD_MODEL = "glm-5:cloud"
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", OLLAMA_CLOUD_MODEL if OLLAMA_CLOUD else "glm-5:cloud")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", OLLAMA_CLOUD_MODEL if OLLAMA_CLOUD else "llama3.2:3b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "").strip() or None
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "2m").strip() or "2m"
+
+# Groq (https://console.groq.com)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip() or None
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b").strip()
+
+# Graph: max steps before stopping (prevents endless loops)
+RECURSION_LIMIT = int(os.getenv("RECURSION_LIMIT", "100").strip() or "100")
+
+# OpenRouter (https://openrouter.ai)
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip() or None
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "arcee-ai/trinity-large-preview:free").strip()
+OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "").strip() or None  # Optional: HTTP-Referer for rankings
+OPENROUTER_SITE_NAME = os.getenv("OPENROUTER_SITE_NAME", "").strip() or None  # Optional: X-OpenRouter-Title for rankings

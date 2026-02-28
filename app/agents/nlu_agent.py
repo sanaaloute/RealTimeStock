@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from app.agents.llm import get_llm
+
+logger = logging.getLogger(__name__)
+from app.models.llm import get_llm
 
 import config
 from app.utils.brvm_companies import (
@@ -19,49 +22,21 @@ from app.agents.utils import get_time_prefix
 
 def _nlu_system_prompt() -> str:
     brvm_list = format_list_for_prompt()
-    return f"""You are the NLU (natural language understanding) module for the BRVM stock assistant (Bourse Régionale des Valeurs Mobilières). This assistant covers only BRVM—not other stock exchanges (NYSE, NASDAQ, other African bourses). All amounts are in F CFA. You output either a clarification question or a single JSON object—nothing else.
+    return f"""BRVM stock assistant NLU. Output CLARIFY or JSON only. F CFA. {get_time_prefix()}
 
-**{get_time_prefix()}** — Use this date/time when the user says "today", "now", or relative expressions ("last week", "this month"). Resolve relative dates to YYYY-MM-DD.
+**CRITICAL:** Extract entities ONLY from the user message below. Do NOT reuse symbols from previous turns. Each question is independent.
 
-**Strict rule:** Only recognize companies/symbols from this list. If the user names a company or symbol NOT in the list, output CLARIFY asking them to choose from the BRVM list. If the user asks about another stock market (e.g. "Wall Street", "Nigeria stock exchange"), output CLARIFY: "This assistant only covers the BRVM (West African regional exchange)."
-Valid BRVM companies (symbol: company name):
+**BRVM symbols only:**
 {brvm_list}
+Unknown symbol or other exchange → CLARIFY.
 
-**Intents (use exactly these strings):**
-- market_overview: most traded stock, highest volume, top performers, top gainers, top losers, market summary. No required entities (analytics worker will use market overview tool).
-- price_query: current or historical price of one stock. Requires: symbol.
-- compare: compare two stocks. Requires: symbol_a, symbol_b. Optional: period, start_date, end_date.
-- chart: plot/graph of a stock's price over a period. Requires: symbol. Optional: start_date, end_date, chart_type (line|area). Infer dates if user says "last week" etc.
-- update_timeseries: check or refresh company CSV data. Optional: symbol (or "all" for all symbols).
-- scrape: fetch raw data from BRVM websites (palmarès, variation, time series CSV, BRVM site). No required entities.
-- metrics: statistics over a period (average, median, min, max). Requires: symbol. Optional: start_date, end_date.
-- news: latest news/actualités/announcements about a BRVM company or the market. Optional: symbol.
-- brvm_basics: what is BRVM, how to invest on BRVM, how does BRVM work. No required entities.
-- portfolio_display: show my portfolio, my portfolio, list portfolio. No required entities.
-- portfolio_summary: portfolio growth, portfolio loss, how is my portfolio doing. No required entities.
-- portfolio_add: add stock to portfolio (e.g. I bought NTLC at 50000 on 2025-01-15). Requires: symbol, buy_price, buy_date. Optional: quantity.
-- portfolio_remove: remove a stock from my portfolio. Requires: symbol.
-- tracking_list: show my tracking list, what am I tracking. No required entities.
-- tracking_add: add symbol to tracking list. Requires: symbol.
-- tracking_remove: remove symbol from tracking. Requires: symbol.
-- target_set: set price alert, notify when symbol reaches price (e.g. notify me when NTLC hits 55000). Requires: symbol, target_price. Optional: direction (above/below).
-- target_list: show my alerts, my price targets. No required entities.
-- target_remove: remove alert for a symbol. Requires: symbol.
-- general: other BRVM-related question; no specific params.
+**Intents (exact):** market_overview | price_query | compare | chart | metrics | news | scrape | update_timeseries | brvm_basics | portfolio_display | portfolio_add | portfolio_remove | tracking_list | tracking_add | target_set | target_list | general
 
-**Entities:** symbol, symbol_a, symbol_b must be the official SYMBOL from the list (e.g. Nestlé → NTLC, Solibra → SLBC). Dates in YYYY-MM-DD. period: e.g. "1W", "1M", "1Y". chart_type: "line" or "area".
+**Worker:** analytics (prices, compare, stats, overview) | charts (plot) | timeseries (CSV) | scraper (raw fetch) | news | portfolio
 
-**Output (exactly one of the two):**
-
-A) Unclear / missing info / company not in list / user asks about another exchange → one line:
-CLARIFY: <Short question in the user's language. Ask for the missing detail or say we only cover BRVM.>
-
-B) Clear intent, all companies in list (if any) → single JSON, no other text:
-{{"intent": "<intent>", "entities": {{"symbol": "<SYMBOL>", ...}}, "suggested_worker": "<analytics|scraper|charts|timeseries|news|portfolio>"}}
-
-**Worker mapping:** market_overview, price_query, compare, metrics, brvm_basics, general → analytics. chart → charts. update_timeseries → timeseries. scrape → scraper. news → news. portfolio_display, portfolio_summary, portfolio_add, portfolio_remove, tracking_list, tracking_add, tracking_remove, target_set, target_list, target_remove → portfolio.
-
-Reply only with CLARIFY: ... or the JSON object."""
+**Output:**
+A) Unclear → CLARIFY: <short question>
+B) Clear → {{"intent": "...", "entities": {{"symbol": "NTLC", ...}}, "suggested_worker": "analytics"}}"""
 
 
 def _extract_user_text(messages: list) -> str:
@@ -128,6 +103,7 @@ def _parse_nlu_response(content: str) -> tuple[dict[str, Any] | None, str | None
 
 
 def run_nlu_node(state: dict, model: str) -> dict:
+    logger.info("[GRAPH] node=nlu start")
     messages = state.get("messages") or []
     user_text = _extract_user_text(messages)
     if not user_text:
@@ -137,7 +113,7 @@ def run_nlu_node(state: dict, model: str) -> dict:
             "structured_data": None,
         }
 
-    llm = get_llm(model=model, temperature=0)
+    llm = get_llm(model=model)
 
     system = _nlu_system_prompt()
     prompt = f"User message: {user_text}"

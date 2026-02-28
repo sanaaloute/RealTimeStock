@@ -128,7 +128,6 @@ def _to_json_safe(obj: Any) -> Any:
 
 def _summary(data: dict, site: str) -> str:
     """Custom summary per site."""
-    print("DATA", data)
     if site == "sikafinance":
         n = len(data.get("brvm_stocks") or [])
         period = data.get("period", "veille")

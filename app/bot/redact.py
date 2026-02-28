@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from app.agents.llm import get_llm
+from app.models.llm import get_llm
 
 # Drop lines that mention file paths or tool usage (internal details)
 _PATH_LINE = re.compile(
@@ -54,7 +54,7 @@ def redact_for_telegram(raw_output: str, model: str | None = None) -> str:
     if not raw:
         return "No answer."
 
-    llm = get_llm(model=model, temperature=0)
+    llm = get_llm(model=model)
     messages = [
         SystemMessage(content=REDACT_SYSTEM),
         HumanMessage(content=REDACT_USER_TEMPLATE.format(raw_output=raw)),

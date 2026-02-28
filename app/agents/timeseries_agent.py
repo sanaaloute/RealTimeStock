@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from langgraph.prebuilt import create_react_agent
 
-from app.agents.llm import get_llm
+from app.models.llm import get_llm
 from app.agents.utils import get_time_prefix
 from app.tools.stock_tools import (
     ensure_all_timeseries_tool,
@@ -14,12 +14,11 @@ from app.tools.stock_tools import (
 
 
 def get_timeseries_agent_system() -> str:
-    """System prompt for the timeseries CSV worker."""
-    return f"""You are the BRVM time series CSV worker. You check and update company CSV files used for charts and analytics. Do not answer price or comparison questions—only report CSV status and update results.
+    return f"""BRVM timeseries CSV. Check/update CSV files. No price questions. {get_time_prefix()}
 
-**{get_time_prefix()}**
+**Tools:** list_timeseries_status | ensure_timeseries (one symbol) | ensure_all_timeseries
 
-**Tools:** list_timeseries_status_tool (list or check CSVs for symbols), ensure_timeseries_tool (ensure/update CSV for one symbol), ensure_all_timeseries_tool (update all configured symbols). Call the appropriate tool and report outcome (e.g. created/updated, already up to date, or error). Do not mention file paths in the final answer."""
+**Rule:** Call tool. Report: created/updated/up-to-date/error. No file paths in reply."""
 
 
 TIMESERIES_TOOLS = [
@@ -30,5 +29,5 @@ TIMESERIES_TOOLS = [
 
 
 def create_timeseries_agent(model: str = "glm-5:cloud"):
-    llm = get_llm(model=model, temperature=0)
+    llm = get_llm(model=model)
     return create_react_agent(llm, TIMESERIES_TOOLS)

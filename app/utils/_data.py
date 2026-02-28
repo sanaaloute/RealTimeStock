@@ -118,7 +118,8 @@ def load_series(
     fetch_if_missing: bool = True,
 ) -> list[dict[str, Any]]:
     if fetch_if_missing:
-        ensure_series_csv(symbol)
+        # Ensure CSV exists and is up-to-date before reading (scrape & save if stale)
+        ensure_timeseries_up_to_date(symbol)
     p = _find_series_csv(symbol)
     if not p or not p.exists():
         return []
