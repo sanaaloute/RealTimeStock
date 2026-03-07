@@ -29,9 +29,9 @@ from app.agents.nlu_agent import create_nlu_node
 from app.agents.scraper_agent import create_scraper_agent, get_scraper_agent_system
 from app.agents.timeseries_agent import create_timeseries_agent, get_timeseries_agent_system
 from app.agents.portfolio_agent import create_portfolio_agent, get_portfolio_agent_system
+from app.agents.prediction_agent import create_prediction_agent, get_prediction_agent_system
 
-MEMORY_SUMMARY_THRESHOLD = 26
-MEMORY_KEEP_RECENT = 12
+MEMORY_MAX_MESSAGES = 10  # Keep only last 10 messages (user + final AI pairs)
 
 # region agent log
 DEBUG_LOG_PATH = Path("debug-ce8ad8.log").resolve()
@@ -74,11 +74,12 @@ SUPERVISOR_SYSTEM_TEMPLATE = """BRVM router. Output one label only. {time_line}
 - ANALYTICS — Prices, compare, stats, market overview (numbers, no plots)
 - TIMESERIES — CSV maintenance only: list/update CSVs. Use ONLY when the user explicitly asks to update timeseries files or check their status. Never route normal price/metrics/compare/chart/news questions here.
 - CHARTS — Plot/graph of stock price
-- NEWS — Actualités, communiqués, dividends, predictions
+- NEWS — Actualités, communiqués, dividends
+- PREDICTION — Stock predictions, trends table, hausse/baisse/neutre, technical trend for a symbol
 - PORTFOLIO — My portfolio, tracking list, price alerts
 - FINISH — Done, greeting, or off-topic
 
-**Output:** SCRAPER | ANALYTICS | TIMESERIES | CHARTS | NEWS | PORTFOLIO | FINISH
+**Output:** SCRAPER | ANALYTICS | TIMESERIES | CHARTS | NEWS | PREDICTION | PORTFOLIO | FINISH
 (For multi: ANALYTICS,NEWS or SCRAPER|CHARTS — do NOT include TIMESERIES in multi.)"""
 
 
@@ -132,6 +133,8 @@ def _label_to_worker(label: str) -> WorkerName | Literal["FINISH"] | None:
         return "charts"
     if "NEWS" in label:
         return "news"
+    if "PREDICTION" in label or "PREDICT" in label or "TREND" in label:
+        return "prediction"
     if "PORTFOLIO" in label:
         return "portfolio"
     if "FINISH" in label or not label:
@@ -139,23 +142,33 @@ def _label_to_worker(label: str) -> WorkerName | Literal["FINISH"] | None:
     return None
 
 
-def _summarize_messages(messages: list, model: str) -> str:
-    if not messages:
-        return ""
-    from langchain_core.messages.utils import get_buffer_string
-    llm = get_llm(model=model)
-    text = get_buffer_string(messages)[:8000]
-    prompt = f"""Summarize this BRVM stock market conversation in 2–4 short sentences. Include: stock symbols mentioned (e.g. NTLC, SLBC), what the user asked for, and key facts (prices, dates, comparisons). Omit tool names, file paths, and internal implementation details.
-
-Conversation:
-{text}
-
-Summary:"""
-    try:
-        out = llm.invoke([HumanMessage(content=prompt)])
-        return (getattr(out, "content", None) or str(out)).strip() or "Previous conversation."
-    except Exception:
-        return "Previous conversation."
+def _condense_to_user_final_pairs(messages: list) -> list:
+    """
+    Reduce message list to [user, final_ai, user, final_ai, ...] where final_ai is the
+    reply sent to the user (last AIMessage before next HumanMessage, excluding NLU).
+    """
+    out: list = []
+    i = 0
+    while i < len(messages):
+        if not isinstance(messages[i], HumanMessage):
+            i += 1
+            continue
+        user_msg = messages[i]
+        j = i + 1
+        final_ai = None
+        while j < len(messages):
+            if isinstance(messages[j], HumanMessage):
+                break
+            if isinstance(messages[j], AIMessage):
+                content = str(getattr(messages[j], "content", "") or "")
+                if "[NLU]" not in content:
+                    final_ai = messages[j]
+            j += 1
+        if final_ai is not None:
+            out.append(user_msg)
+            out.append(final_ai)
+        i = j if j > i else i + 1
+    return out[-MEMORY_MAX_MESSAGES:]
 
 
 def _build_supervisor_node(model: str):
@@ -164,19 +177,12 @@ def _build_supervisor_node(model: str):
     def supervisor(state: AgentState) -> dict:
         logger.info("[GRAPH] node=supervisor start")
         messages = state.get("messages") or []
-        summary = state.get("conversation_summary") or ""
         structured_data = state.get("structured_data")
 
-        if len(messages) > MEMORY_SUMMARY_THRESHOLD:
-            to_summarize = messages[:-MEMORY_KEEP_RECENT]
-            new_summary = _summarize_messages(to_summarize, model)
-            summary = f"{summary}\n{new_summary}".strip() if summary else new_summary
-            messages = list(messages[-MEMORY_KEEP_RECENT:])
         if not messages:
             return {
                 "messages": messages,
                 "next": "FINISH",
-                "conversation_summary": summary,
                 "multi_workers": [],
                 "multi_parallel": False,
             }
@@ -185,33 +191,24 @@ def _build_supervisor_node(model: str):
         last_content = (last_msg.content if hasattr(last_msg, "content") else "") or ""
         # If last message is worker response (not NLU), finish—avoid endless loops
         if isinstance(last_msg, AIMessage) and "[NLU]" not in str(last_content) and len(str(last_content).strip()) > 20:
-            out_finish: dict = {
+            return {
                 "messages": messages,
                 "next": "FINISH",
                 "multi_workers": [],
                 "multi_parallel": False,
             }
-            if summary:
-                out_finish["conversation_summary"] = summary
-            return out_finish
         if structured_data and "[NLU]" in str(last_content):
             suggested = (structured_data.get("suggested_worker") or "").strip().lower()
-            if suggested in ("scraper", "analytics", "timeseries", "charts", "news", "portfolio"):
-                out: dict = {
+            if suggested in ("scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction"):
+                return {
                     "messages": messages,
                     "next": suggested,
                     "multi_workers": [],
                     "multi_parallel": False,
                 }
-                if summary:
-                    out["conversation_summary"] = summary
-                return out
 
         time_system = _get_supervisor_system()
-        system_content = time_system
-        if summary:
-            system_content = f"{time_system}\n\nConversation summary (context):\n{summary}"
-        to_send = [SystemMessage(content=system_content)] + list(messages)
+        to_send = [SystemMessage(content=time_system)] + list(messages)
         reply = llm.invoke(to_send)
         content = reply.content if hasattr(reply, "content") else str(reply)
         next_worker, multi_workers, multi_parallel = _parse_next(content)
@@ -238,8 +235,6 @@ def _build_supervisor_node(model: str):
         if multi_workers:
             out["multi_workers"] = multi_workers
             out["multi_parallel"] = multi_parallel
-        if summary:
-            out["conversation_summary"] = summary
         return out
 
     return supervisor
@@ -281,7 +276,6 @@ def _build_worker_node(
     def node(state: AgentState) -> dict:
         logger.info("[GRAPH] node=%s start", worker_name)
         messages = state.get("messages") or []
-        summary = state.get("conversation_summary") or ""
         structured_data = state.get("structured_data")
         time_line = get_time_prefix()
         # region agent log
@@ -307,16 +301,12 @@ def _build_worker_node(
                     system_content = prepend_system()
             else:
                 system_content = prepend_system
-            if summary:
-                system_content = f"Conversation summary (context):\n{summary}\n\n{system_content}"
             entities_hint = _entities_hint(structured_data)
             if entities_hint:
                 system_content = system_content.rstrip() + entities_hint
             messages = [SystemMessage(content=system_content)] + list(messages)
         else:
             prefix = time_line
-            if summary:
-                prefix = f"Conversation summary:\n{summary}\n\n{prefix}"
             entities_hint = _entities_hint(structured_data)
             if entities_hint:
                 prefix = prefix.rstrip() + entities_hint
@@ -342,7 +332,7 @@ def route_after_nlu(state: AgentState) -> Literal["supervisor", "__end__"]:
 
 def route_after_supervisor(
     state: AgentState,
-) -> Literal["scraper", "analytics", "timeseries", "charts", "news", "portfolio", "multi_worker", "__end__"]:
+) -> Literal["scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction", "multi_worker", "__end__"]:
     multi = state.get("multi_workers") or []
     if multi:
         return "multi_worker"
@@ -357,6 +347,8 @@ def route_after_supervisor(
         return "charts"
     if next_ == "news":
         return "news"
+    if next_ == "prediction":
+        return "prediction"
     if next_ == "portfolio":
         return "portfolio"
     return "__end__"
@@ -382,7 +374,7 @@ def _build_multi_worker_node(
 
         messages = list(state.get("messages") or [])
         image_path = state.get("image_path")
-        valid = {"scraper", "analytics", "timeseries", "charts", "news", "portfolio"}
+        valid = {"scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction"}
         workers = [w for w in workers if w in valid and w in worker_nodes]
 
         # region agent log
@@ -404,12 +396,12 @@ def _build_multi_worker_node(
             with ThreadPoolExecutor(max_workers=len(workers)) as ex:
                 futures = {ex.submit(worker_nodes[w], state): w for w in workers}
                 for fut in as_completed(futures):
+                    wn = futures[fut]
                     try:
                         res = fut.result()
-                        wn = futures[fut]
                         worker_results[wn] = res
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Worker %s failed: %s", wn, e)
             all_new: list = []
             for wn in workers:
                 res = worker_results.get(wn)
@@ -464,6 +456,7 @@ def create_master_graph(model: str | None = None, checkpointer: Any | None = Non
     def _portfolio_system(state: AgentState) -> str:
         return get_portfolio_agent_system(state.get("telegram_user_id") or 0)
     portfolio_n = _build_worker_node(create_portfolio_agent, model, worker_name="portfolio", prepend_system=_portfolio_system)
+    prediction_n = _build_worker_node(create_prediction_agent, model, worker_name="prediction", prepend_system=get_prediction_agent_system)
 
     builder.add_node("scraper", scraper_n)
     builder.add_node("analytics", analytics_n)
@@ -471,6 +464,7 @@ def create_master_graph(model: str | None = None, checkpointer: Any | None = Non
     builder.add_node("charts", charts_n)
     builder.add_node("news", news_n)
     builder.add_node("portfolio", portfolio_n)
+    builder.add_node("prediction", prediction_n)
 
     worker_nodes_map["scraper"] = scraper_n
     worker_nodes_map["analytics"] = analytics_n
@@ -478,6 +472,7 @@ def create_master_graph(model: str | None = None, checkpointer: Any | None = Non
     worker_nodes_map["charts"] = charts_n
     worker_nodes_map["news"] = news_n
     worker_nodes_map["portfolio"] = portfolio_n
+    worker_nodes_map["prediction"] = prediction_n
 
     builder.add_node("multi_worker", _build_multi_worker_node(worker_nodes_map, model))
 
@@ -490,6 +485,7 @@ def create_master_graph(model: str | None = None, checkpointer: Any | None = Non
     builder.add_edge("charts", "supervisor")
     builder.add_edge("news", "supervisor")
     builder.add_edge("portfolio", "supervisor")
+    builder.add_edge("prediction", "supervisor")
     builder.add_edge("multi_worker", "supervisor")
 
     cp = checkpointer if checkpointer is not None else MemorySaver()
@@ -511,7 +507,9 @@ def run_agent(
     }
     current = graph.get_state(run_config)
     existing = (current.values or {}).get("messages") or []
-    messages = list(existing) + [HumanMessage(content=query)]
+    # Keep only last N messages as [user, final_ai, user, final_ai, ...]
+    condensed = _condense_to_user_final_pairs(existing)
+    messages = list(condensed) + [HumanMessage(content=query)]
     initial: AgentState = {"messages": messages}
     if telegram_user_id is not None:
         initial["telegram_user_id"] = telegram_user_id
@@ -530,11 +528,28 @@ def run_agent(
     )
     # endregion
 
+    def _revert_messages() -> None:
+        try:
+            graph.update_state(run_config, {"messages": condensed})
+        except Exception as upd_err:
+            logger.warning("Could not revert messages on failure: %s", upd_err)
+
     last_error: BaseException | None = None
     for attempt in range(3):
         try:
-            return graph.invoke(initial, config=run_config)
+            result = graph.invoke(initial, config=run_config)
+            if result.get("clarification"):
+                _revert_messages()
+                return result
+            # Success: store only [user, final_ai, ...], last 10
+            new_condensed = _condense_to_user_final_pairs(result.get("messages") or [])
+            try:
+                graph.update_state(run_config, {"messages": new_condensed})
+            except Exception as upd_err:
+                logger.warning("Could not update state with condensed messages: %s", upd_err)
+            return result
         except Exception as e:
+            _revert_messages()
             if "recursion" in str(e).lower() or "GraphRecursionError" in type(e).__name__:
                 logger.warning("Graph hit recursion limit, returning partial result: %s", e)
                 try:

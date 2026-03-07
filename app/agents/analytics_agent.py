@@ -21,7 +21,9 @@ def get_analytics_agent_system() -> str:
 
 **CRITICAL:** Use the symbol from NLU entities for tool calls. The user's CURRENT question is the last HumanMessage. Do NOT use symbols from previous bot responses.
 
-**Tools:** get_market_overview (rankings) | get_stock_metrics (price/volume) | get_timeseries | compare_stocks | compute_metrics (avg/min/max) | get_brvm_basics (FAQ) | get_company_info (name/sector)
+**General market questions (no symbol in entities):** When the user asks "most expensive stock", "lowest price stock", "cheapest stock", "highest price", or "should I buy the cheapest?" — call **get_market_overview** (no symbol needed). Use the **highest_prices** and **lowest_prices** lists in the result to answer. For "should I buy it?" give a short answer about the lowest-priced stock(s) and add a disclaimer that this is not investment advice.
+
+**Tools:** get_market_overview (rankings: highest_prices, lowest_prices, top_by_volume, top_gainers, top_losers) | get_stock_metrics (price/volume) | get_timeseries | compare_stocks | compute_metrics (avg/min/max) | get_brvm_basics (FAQ) | get_company_info (name/sector)
 
 **Rule:** Use get_company_info for company names. No invented data. No tool names in reply."""
 

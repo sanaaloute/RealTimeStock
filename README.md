@@ -30,7 +30,7 @@ RealTimeStock/
 │   │   ├── telegram_bot.py
 │   │   └── voice_to_text.py
 │   ├── data/
-│   │   ├── brvm_companies.txt
+│   │   ├── BRVM_Companies.xlsx
 │   │   └── series/
 │   ├── scrapers/
 │   │   ├── base.py

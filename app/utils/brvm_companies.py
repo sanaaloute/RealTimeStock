@@ -1,11 +1,21 @@
-"""Load BRVM companies and symbols from data/brvm_companies.txt for NLU mapping (avoid hallucination)."""
+"""Load BRVM companies and symbols from data/BRVM_Companies.xlsx for NLU mapping (avoid hallucination)."""
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
-# Path relative to app package (app/data/brvm_companies.txt)
-BRVM_COMPANIES_FILE = Path(__file__).resolve().parent.parent / "data" / "brvm_companies.txt"
+logger = logging.getLogger(__name__)
+
+# Path relative to app package (app/data/BRVM_Companies.xlsx)
+BRVM_COMPANIES_FILE = Path(__file__).resolve().parent.parent / "data" / "BRVM_Companies.xlsx"
+
+# Excel column names: Name, Symbol, Sector, industryCluster, Country
+COL_NAME = "Name"
+COL_SYMBOL = "Symbol"
+COL_SECTOR = "Sector"
+COL_INDUSTRY_CLUSTER = "industryCluster"
+COL_COUNTRY = "Country"
 
 _symbol_to_name: dict[str, str] = {}
 _symbol_to_sector: dict[str, str] = {}
@@ -25,6 +35,17 @@ def _normalize(s: str) -> str:
     return " ".join((s or "").lower().strip().split())
 
 
+def _cell_value(v: Any) -> str:
+    """Get string value from an openpyxl Cell or a raw value."""
+    if v is None:
+        return ""
+    if hasattr(v, "value"):
+        v = getattr(v, "value")
+    if v is None:
+        return ""
+    return str(v).strip()
+
+
 def _load() -> None:
     global _symbol_to_name, _symbol_to_sector, _name_to_symbol, _valid_symbols, _loaded
     if _loaded:
@@ -34,31 +55,68 @@ def _load() -> None:
     _name_to_symbol = {}
     _valid_symbols = set()
     if not BRVM_COMPANIES_FILE.exists():
+        logger.warning("BRVM companies file not found: %s", BRVM_COMPANIES_FILE)
         _loaded = True
         return
-    with open(BRVM_COMPANIES_FILE, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = [p.strip() for p in line.split("\t")]
-            if len(parts) < 2:
-                continue
-            symbol = parts[0].upper()
-            name_part = parts[1]
-            sector = parts[2] if len(parts) >= 3 else ""
-            _valid_symbols.add(symbol)
-            _symbol_to_name[symbol] = name_part
-            if sector:
-                _symbol_to_sector[symbol] = sector
-            # Map full name and symbol to symbol
-            _name_to_symbol[_normalize(name_part)] = symbol
-            _name_to_symbol[_normalize(symbol)] = symbol
-            # Map distinctive words only (avoid "Bank" -> wrong bank, "Côte" -> wrong company)
-            for word in name_part.replace(",", " ").replace("|", " ").replace("(", " ").replace(")", " ").split():
-                w = word.strip()
-                if len(w) >= 3 and w.upper() != symbol and _normalize(w) not in _STOP_WORDS:
-                    _name_to_symbol[_normalize(w)] = symbol
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        logger.warning("openpyxl not installed. pip install openpyxl to load BRVM_Companies.xlsx")
+        _loaded = True
+        return
+    try:
+        wb = load_workbook(BRVM_COMPANIES_FILE, read_only=True, data_only=True)
+        sheet = wb.active
+        if sheet is None:
+            wb.close()
+            _loaded = True
+            return
+        rows = list(sheet.iter_rows(min_row=1, values_only=False))
+        wb.close()
+    except Exception as e:
+        logger.warning("Failed to load BRVM companies from %s: %s", BRVM_COMPANIES_FILE, e)
+        _loaded = True
+        return
+    if not rows:
+        _loaded = True
+        return
+    # First row: header; match column names (case-insensitive for robustness)
+    header = [_cell_value(c) for c in rows[0]]
+    col_index: dict[str, int] = {}
+    for i, h in enumerate(header):
+        key = (h or "").strip()
+        if key:
+            col_index[key.lower()] = i
+    name_col = col_index.get(COL_NAME.lower(), col_index.get("name", -1))
+    symbol_col = col_index.get(COL_SYMBOL.lower(), col_index.get("symbol", -1))
+    sector_col = col_index.get(COL_SECTOR.lower(), col_index.get("sector", -1))
+    industry_col = col_index.get(COL_INDUSTRY_CLUSTER.lower(), -1)
+    if symbol_col < 0 or name_col < 0:
+        logger.warning("BRVM_Companies.xlsx: expected columns %r and %r in %s", COL_SYMBOL, COL_NAME, list(col_index))
+        _loaded = True
+        return
+    for row in rows[1:]:
+        if not row:
+            continue
+        cells = list(row)
+        symbol = _cell_value(cells[symbol_col]) if symbol_col < len(cells) else ""
+        name_part = _cell_value(cells[name_col]) if name_col < len(cells) else ""
+        if not symbol:
+            continue
+        symbol = symbol.upper()
+        sector = _cell_value(cells[sector_col]) if sector_col >= 0 and sector_col < len(cells) else ""
+        if not sector and industry_col >= 0 and industry_col < len(cells):
+            sector = _cell_value(cells[industry_col])
+        _valid_symbols.add(symbol)
+        _symbol_to_name[symbol] = name_part or symbol
+        if sector:
+            _symbol_to_sector[symbol] = sector
+        _name_to_symbol[_normalize(name_part)] = symbol
+        _name_to_symbol[_normalize(symbol)] = symbol
+        for word in (name_part or "").replace(",", " ").replace("|", " ").replace("(", " ").replace(")", " ").split():
+            w = word.strip()
+            if len(w) >= 3 and w.upper() != symbol and _normalize(w) not in _STOP_WORDS:
+                _name_to_symbol[_normalize(w)] = symbol
     _loaded = True
 
 

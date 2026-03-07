@@ -291,7 +291,7 @@ get_brvm_announcements_tool = StructuredTool.from_function(
 get_market_overview_tool = StructuredTool.from_function(
     func=_get_market_overview,
     name="get_market_overview",
-    description="Get BRVM market overview: most traded stocks (top by volume), top gainers, top losers. Use this for questions like 'most traded stock', 'highest volume', 'top performers'. Returns only BRVM-listed symbols. All amounts in F CFA.",
+    description="Get BRVM market overview: most expensive stocks (highest_prices), cheapest stocks (lowest_prices), most traded (top_by_volume), top gainers, top losers. Use this for: 'most expensive stock', 'lowest price stock', 'cheapest stock', 'highest price', 'top 5 by price', 'should I buy the cheapest?'. No symbol required. Returns only BRVM-listed symbols. All amounts in F CFA.",
     args_schema=GetMarketOverviewInput,
 )
 

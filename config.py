@@ -29,16 +29,22 @@ if _raw:
             ALLOWED_TELEGRAM_IDS.append(int(s))
 
 _raw_symbols = os.getenv("TIMESERIES_SYMBOLS", "").strip()
-TIMESERIES_SYMBOLS: list[str] = [s.strip().upper() for s in _raw_symbols.split(",") if s.strip()] if _raw_symbols else [
-    "NTLC", "SLBC", "SNTS", "TTLS", "CFA", "BOAB", "BICC", "SDSC", "SDCC", "FTSC", "CAGC", "TLSR", "ETIT", "SGBC", "NEIC", "SMBC", "CBIBF", "ECOC", "BRVM"
-]
+if _raw_symbols:
+    TIMESERIES_SYMBOLS: list[str] = [s.strip().upper() for s in _raw_symbols.split(",") if s.strip()]
+else:
+    # Default: use all symbols from app/data/BRVM_Companies.xlsx
+    try:
+        from app.utils.brvm_companies import get_valid_symbols
+        TIMESERIES_SYMBOLS = sorted(get_valid_symbols())
+    except Exception:
+        TIMESERIES_SYMBOLS = []
 
 # LLM provider: ollama | groq | openrouter
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").strip().lower() or "ollama"
 # Optional: override model for current provider (e.g. LLM_MODEL=llama-3.1-70b)
 LLM_MODEL = os.getenv("LLM_MODEL", "").strip() or None
 # LLM temperature (0=deterministic, higher=more creative). Default 0.5
-LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7").strip() or "0.5")
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.0").strip() or "0.0")
 
 # Ollama
 OLLAMA_CLOUD_HOST = "https://ollama.com"

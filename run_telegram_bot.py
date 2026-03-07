@@ -8,6 +8,7 @@ import httpx
 
 import config
 from app.bot import build_application
+from app.bot.telegram_bot import run_polling_with_retry
 from app.utils._data import run_daily_timeseries_update
 
 logging.basicConfig(
@@ -24,7 +25,6 @@ TARGET_CHECK_INTERVAL_SEC = 300  # 5 minutes
 def _daily_timeseries_job() -> None:
     """Run once per day: update CSVs for all configured symbols."""
     while True:
-        time.sleep(DAILY_INTERVAL_SEC)
         try:
             logger.info("Daily timeseries update: %s", config.TIMESERIES_SYMBOLS)
             results = run_daily_timeseries_update(config.TIMESERIES_SYMBOLS)
@@ -32,16 +32,14 @@ def _daily_timeseries_job() -> None:
                 logger.info("Timeseries %s: %s", r.get("symbol"), r.get("action", r))
         except Exception as e:
             logger.exception("Daily timeseries update failed: %s", e)
+        time.sleep(DAILY_INTERVAL_SEC)
 
 
 async def _check_target_alerts(context) -> None:
     """Job: check price targets and send Telegram notifications to users whose target was reached."""
     try:
         from app.utils.user_db import check_targets_and_notify
-        allowed = set(config.ALLOWED_TELEGRAM_IDS or [])
         for telegram_id, text in check_targets_and_notify():
-            if telegram_id not in allowed:
-                continue
             try:
                 await context.bot.send_message(chat_id=telegram_id, text=text)
                 logger.info("Target alert sent to user %s", telegram_id)
@@ -54,9 +52,6 @@ async def _check_target_alerts(context) -> None:
 def main() -> int:
     if not config.TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN is not set. Add it to .env (from @BotFather).")
-        return 1
-    if not config.ALLOWED_TELEGRAM_IDS:
-        logger.error("ALLOWED_TELEGRAM_IDS is empty. Add at least one Telegram user ID to .env.")
         return 1
     if config.OLLAMA_CLOUD and not config.OLLAMA_API_KEY:
         logger.error("OLLAMA_API_KEY is required when OLLAMA_CLOUD=true. Create one at https://ollama.com/settings/keys")
@@ -97,8 +92,7 @@ def main() -> int:
     if app.job_queue is not None:
         app.job_queue.run_repeating(_check_target_alerts, interval=TARGET_CHECK_INTERVAL_SEC, first=60)
         logger.info(
-            "Bot starting (allowed IDs: %s). Chat API: %s. Daily timeseries + target alerts (every %s s) scheduled.",
-            config.ALLOWED_TELEGRAM_IDS,
+            "Bot starting (open to all users). Chat API: %s. Daily timeseries + target alerts (every %s s) scheduled.",
             config.BRVM_API_URL,
             TARGET_CHECK_INTERVAL_SEC,
         )
@@ -107,12 +101,18 @@ def main() -> int:
             "JobQueue not available. Install with: pip install \"python-telegram-bot[job-queue]\" for price target alerts."
         )
         logger.info(
-            "Bot starting (allowed IDs: %s). Chat API: %s. Daily timeseries scheduled; target alerts disabled.",
-            config.ALLOWED_TELEGRAM_IDS,
+            "Bot starting (open to all users). Chat API: %s. Daily timeseries scheduled; target alerts disabled.",
             config.BRVM_API_URL,
         )
-    app.run_polling(allowed_updates=["message"], bootstrap_retries=5)
-    return 0
+    # Polling runs until interrupted (exception/signal)
+    run_polling_with_retry(
+        app,
+        allowed_updates=["message"],
+        bootstrap_retries=5,
+        poll_retry_max=0,
+        poll_retry_delay=30.0,
+        poll_retry_backoff=1.5,
+    )
 
 
 if __name__ == "__main__":

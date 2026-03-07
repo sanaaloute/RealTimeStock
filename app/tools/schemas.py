@@ -178,3 +178,19 @@ class GetRichboursePredictionInput(BaseModel):
 class GetRichbourseDividendsInput(BaseModel):
     limit: int = Field(default=50, description="Max number of dividend entries to return.")
     symbol: str | None = Field(default=None, description="Optional: filter by symbol or company name.")
+
+
+# Prediction/trends tools (prediction_tools.py)
+class GetAllTrendsInput(BaseModel):
+    limit: int = Field(default=100, description="Max number of stocks to return from the full trends table.")
+
+
+class GetTrendsByOptionInput(BaseModel):
+    trend_option: str = Field(
+        description="Filter by trend: hausse (up), baisse (down), or neutre (neutral).",
+    )
+    limit: int = Field(default=100, description="Max number of stocks to return.")
+
+
+class GetStockPredictionDetailInput(BaseModel):
+    symbol: str = Field(description="BRVM symbol (e.g. SPHC, SOGC, NTLC) for full technical prediction details.")

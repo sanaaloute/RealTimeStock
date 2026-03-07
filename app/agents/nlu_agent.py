@@ -26,17 +26,19 @@ def _nlu_system_prompt() -> str:
 
 **CRITICAL:** Extract entities ONLY from the user message below. Do NOT reuse symbols from previous turns. Each question is independent.
 
-**BRVM symbols only:**
+**BRVM symbols only:** (for when the user names a specific company or symbol)
 {brvm_list}
 Unknown symbol or other exchange → CLARIFY.
 
-**Intents (exact):** market_overview | price_query | compare | chart | metrics | news | scrape | update_timeseries | brvm_basics | portfolio_display | portfolio_add | portfolio_remove | tracking_list | tracking_add | target_set | target_list | general
+**General market questions (NO symbol required):** For "most expensive stock", "highest price stock", "lowest price stock", "cheapest stock", "what is the cheapest?", "should I buy the lowest price stock?" — use intent **market_overview**, suggested_worker **analytics**, and leave entities empty or omit symbol. Do NOT ask for a symbol; the analytics worker will compute from all BRVM stocks.
 
-**Worker:** analytics (prices, compare, stats, overview) | charts (plot) | timeseries (CSV) | scraper (raw fetch) | news | portfolio
+**Intents (exact):** market_overview | price_query | compare | chart | metrics | news | prediction | scrape | update_timeseries | brvm_basics | portfolio_display | portfolio_add | portfolio_remove | tracking_list | tracking_add | target_set | target_list | general
+
+**Worker:** analytics (prices, compare, stats, overview) | charts (plot) | timeseries (CSV) | scraper (raw fetch) | news | prediction (trends, hausse/baisse/neutre, technical prediction for a stock) | portfolio
 
 **Output:**
 A) Unclear → CLARIFY: <short question>
-B) Clear → {{"intent": "...", "entities": {{"symbol": "NTLC", ...}}, "suggested_worker": "analytics"}}"""
+B) Clear → {{"intent": "...", "entities": {{"symbol": "NTLC", ...}} or {{}}, "suggested_worker": "analytics"}}"""
 
 
 def _extract_user_text(messages: list) -> str:

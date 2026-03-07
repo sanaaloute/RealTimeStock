@@ -5,26 +5,7 @@
 .gitignore
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
+*
 # Virtual environments
 venv/
 .venv/
@@ -57,3 +38,9 @@ htmlcov/
 # Bot user data (portfolio, tracking, targets, chat memory)
 data/brvm_bot.db
 data/chat_memory.db
+/data/chat_memory.db 
+.cursor/
+app/data/series
+# Database
+*.db
+app/data/
