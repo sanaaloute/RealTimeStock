@@ -6,6 +6,7 @@ from .richbourse import RichBourseScraper
 from .richbourse_dividends import fetch_richbourse_dividends
 from .richbourse_news import fetch_company_news
 from .richbourse_prediction import fetch_richbourse_prediction
+from .richbourse_trends import fetch_richbourse_trends_index
 from .richbourse_timeseries import RichBourseTimeseriesScraper
 from .sikafinance import SikaFinanceScraper
 from .sikafinance_actualites import fetch_sikafinance_actualites
@@ -20,6 +21,7 @@ __all__ = [
     "fetch_company_news",
     "fetch_richbourse_dividends",
     "fetch_richbourse_prediction",
+    "fetch_richbourse_trends_index",
     "fetch_sikafinance_actualites",
     "fetch_sikafinance_communiques",
     "RichBourseScraper",

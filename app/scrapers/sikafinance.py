@@ -12,7 +12,6 @@ import logging
 from typing import Any
 from urllib.parse import urlencode
 
-import requests
 from bs4 import BeautifulSoup
 
 from .base import BaseScraper

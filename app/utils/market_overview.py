@@ -16,7 +16,7 @@ def _filter_brvm(stocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def get_brvm_market_overview(top_n: int = 10) -> dict[str, Any]:
     """
     Return BRVM market overview from palmarès: top stocks by volume, top gainers, top losers.
-    Only includes symbols from the official BRVM list (data/brvm_companies.txt).
+    Only includes symbols from the official BRVM list (data/BRVM_Companies.xlsx).
     """
     stocks = fetch_palmares(period="veille", progression="tout")
     brvm_only = _filter_brvm(stocks)
@@ -46,6 +46,18 @@ def get_brvm_market_overview(top_n: int = 10) -> dict[str, Any]:
         key=lambda x: (x["volume"] is None, -(x["volume"] or 0)),
     )[:top_n]
 
+    # Highest prices (most expensive stocks) — by cours_actuel descending
+    highest_prices = sorted(
+        [e for e in enriched if e.get("cours_actuel") is not None],
+        key=lambda x: -(x["cours_actuel"] or 0),
+    )[:top_n]
+
+    # Lowest prices (cheapest stocks) — by cours_actuel ascending, exclude zero
+    lowest_prices = sorted(
+        [e for e in enriched if e.get("cours_actuel") is not None and (e["cours_actuel"] or 0) > 0],
+        key=lambda x: (x["cours_actuel"] or 0),
+    )[:top_n]
+
     # Top gainers (variation_pct descending, positive first)
     gainers = sorted(
         [e for e in enriched if e.get("variation_pct") is not None and e["variation_pct"] > 0],
@@ -61,6 +73,8 @@ def get_brvm_market_overview(top_n: int = 10) -> dict[str, Any]:
     return {
         "source": "BRVM palmarès (Rich Bourse)",
         "top_by_volume": by_volume,
+        "highest_prices": highest_prices,
+        "lowest_prices": lowest_prices,
         "top_gainers": gainers,
         "top_losers": losers,
         "total_brvm_stocks": len(enriched),

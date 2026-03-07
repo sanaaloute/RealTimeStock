@@ -12,8 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import requests
-
+from app.utils.http_client import http_get
 from .base import BaseScraper
 
 logger = logging.getLogger(__name__)
@@ -66,7 +65,7 @@ class RichBourseTimeseriesScraper(BaseScraper):
 
         try:
             self._sleep()
-            resp = requests.get(
+            resp = http_get(
                 self.url,
                 timeout=30,
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0"},
@@ -85,7 +84,10 @@ class RichBourseTimeseriesScraper(BaseScraper):
             return out
 
         records = []
-        for timestamp_ms, price in series:
+        for item in series:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                continue
+            timestamp_ms, price = item
             dt = datetime.fromtimestamp(timestamp_ms / 1000)
             records.append({"date": dt, "price": price})
 

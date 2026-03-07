@@ -6,10 +6,10 @@ import re
 import time
 from typing import Any
 
-import requests
 from bs4 import BeautifulSoup
 
 import config
+from app.utils.http_client import http_get
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ def fetch_richbourse_dividends(limit: int = 50, symbol: str | None = None) -> di
     try:
         if SLEEP > 0:
             time.sleep(SLEEP)
-        resp = requests.get(DIVIDENDE_URL, timeout=30, headers={"User-Agent": USER_AGENT})
+        resp = http_get(DIVIDENDE_URL, timeout=30, headers={"User-Agent": USER_AGENT})
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as e:

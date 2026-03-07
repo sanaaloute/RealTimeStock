@@ -18,6 +18,8 @@ Portfolio and alerts (your personal data):
 • Tracking: "Add NTLC to my tracking list" / "What am I tracking?" / "Remove NTLC from tracking"
 • Price alerts: "Notify me when NTLC reaches 55000" / "My price targets" / "Remove alert for NTLC"
 
+• Clear conversation memory: send /clearmemory to delete the bot's memory of this chat and start fresh.
+
 You can type or send a voice message. Say "help" anytime to see this message again."""
 
 

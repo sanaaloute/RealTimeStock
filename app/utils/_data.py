@@ -49,12 +49,18 @@ def get_series_status(symbol: str) -> dict[str, Any]:
     if not p or not p.exists():
         return out
     out["path"] = str(p)
+    cutoff = date.today() - timedelta(days=MAX_AGE_DAYS)
     try:
         parts = p.stem.split("_")
         if len(parts) >= 3:
             out["last_date"] = parts[-1][:10]
-            last = date.fromisoformat(out["last_date"])
-            out["up_to_date"] = last >= (date.today() - timedelta(days=MAX_AGE_DAYS))
+            last_data_date = date.fromisoformat(out["last_date"])
+            # Consider up-to-date if data extends to recent OR we already refreshed this file recently (avoid re-scraping every run)
+            try:
+                mtime = datetime.fromtimestamp(p.stat().st_mtime).date()
+            except OSError:
+                mtime = date.min
+            out["up_to_date"] = last_data_date >= cutoff or mtime >= cutoff
     except ValueError:
         pass
     return out
