@@ -1,46 +1,18 @@
-# Environment & secrets
-.env
-.env.local
-.env.*.local
-.gitignore
 # Python
 __pycache__/
-*
-# Virtual environments
-venv/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual env
 .venv/
-env/
-ENV/
+venv/
 
-# Playwright
-playwright-report/
-test-results/
-playwright/.cache/
-.blob-storage/
+# Environment variables
+.env
 
-# IDE & editor
-.idea/
-.vscode/
-*.swp
-*.swo
+# Logs
+*.log
 
 # OS
 .DS_Store
-Thumbs.db
-
-# Testing & tools
-.pytest_cache/
-.coverage
-htmlcov/
-.mypy_cache/
-*.log
-
-# Bot user data (portfolio, tracking, targets, chat memory)
-data/brvm_bot.db
-data/chat_memory.db
-/data/chat_memory.db 
-.cursor/
-app/data/series
-# Database
-*.db
-app/data/
