@@ -12,6 +12,7 @@ from .sikafinance import SikaFinanceScraper
 from .sikafinance_actualites import fetch_sikafinance_actualites
 from .sikafinance_communiques import fetch_sikafinance_communiques
 from .sikafinance_news import fetch_bourse_news
+from .sgi_brvm import fetch_and_save_sgi, load_sgi_local
 
 __all__ = [
     "BaseScraper",
@@ -27,4 +28,6 @@ __all__ = [
     "RichBourseScraper",
     "RichBourseTimeseriesScraper",
     "SikaFinanceScraper",
+    "fetch_and_save_sgi",
+    "load_sgi_local",
 ]

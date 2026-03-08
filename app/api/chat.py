@@ -9,7 +9,6 @@ from pathlib import Path
 
 from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI
-from langchain_core.messages import AIMessage, ToolMessage
 from pydantic import BaseModel
 
 import config
@@ -24,62 +23,13 @@ router = APIRouter()
 # Self-destruction: wipe all chat memory every 15 minutes
 MEMORY_WIPE_INTERVAL_SEC = 15 * 60
 
-# Tool names that fetch data from each source (for footer)
-TOOLS_BY_SOURCE = {
-    "Rich Bourse": {
-        "get_company_news",
-        "get_richbourse_prediction",
-        "get_richbourse_dividends",
-        "get_all_trends",
-        "get_trends_by_option",
-        "get_stock_prediction_detail",
-        "scrape_richbourse",
-        "scrape_richbourse_timeseries",
-    },
-    "Sika Finance": {
-        "get_sikafinance_actualites",
-        "get_sikafinance_communiques",
-        "get_market_news",
-        "scrape_sikafinance",
-    },
-    "BRVM": {
-        "get_brvm_announcements",
-        "scrape_brvm",
-    },
-}
-
-SOURCE_FOOTER = "\n\nAttention : AI generated, be careful."
+# Message appended to every bot reply so users know the content is AI-generated
+SOURCE_FOOTER = "\n\n⚠️ Attention : ce texte est généré par IA. Vérifiez les informations avant toute décision ou action."
 
 
-def _get_sources_from_messages(messages: list) -> set[str]:
-    """Collect source labels (Rich Bourse, Sika Finance, BRVM) from tool calls in this turn."""
-    tool_names: set[str] = set()
-    for m in messages:
-        if isinstance(m, ToolMessage) and getattr(m, "name", None):
-            tool_names.add(str(m.name))
-        if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
-            for tc in m.tool_calls:
-                name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
-                if name:
-                    tool_names.add(str(name))
-    sources: set[str] = set()
-    for source_label, tools in TOOLS_BY_SOURCE.items():
-        if tool_names & tools:
-            sources.add(source_label)
-    return sources
-
-
-def _format_source_footer(sources: set[str]) -> str:
-    if not sources:
-        return ""
-    parts = sorted(sources)
-    return f"\n\nSource(s): {', '.join(parts)}."
-
-
-def _format_final_footer(sources: set[str]) -> str:
-    """Always add AI disclaimer at the bottom; optionally add source line before it."""
-    source_line = _format_source_footer(sources)
-    return source_line + SOURCE_FOOTER
+def _format_final_footer() -> str:
+    """Append AI disclaimer to the reply. Source line is not shown to the user."""
+    return SOURCE_FOOTER
 
 
 def _extract_reply(messages: list) -> str:
@@ -97,22 +47,22 @@ def _extract_reply(messages: list) -> str:
             content = str(m.content).strip()
             if "[NLU]" not in content:
                 return content
-    return "No answer from the agent."
+    return "Aucune réponse de l'assistant."
 
 
 def _user_friendly_error(exc: Exception) -> str:
     err_str = str(exc).lower()
     if "recursion" in err_str:
-        return "The question was too complex. Try a simpler question."
+        return "La question est trop complexe. Essayez une question plus simple."
     if "404" in err_str:
-        return "Model not found. Pull it first: ollama pull <model>"
+        return "Modèle introuvable. Téléchargez-le d'abord : ollama pull <model>"
     if "503" in err_str:
-        return "Ollama is busy or still loading the model. Wait a few seconds and try again."
+        return "Ollama est occupé ou charge encore le modèle. Attendez quelques secondes et réessayez."
     if "ssl" in err_str or "eof" in err_str or "connect" in err_str:
-        return "The AI service is temporarily unavailable. Check that Ollama is running and try again."
+        return "Le service IA est temporairement indisponible. Vérifiez qu'Ollama tourne et réessayez."
     if "timeout" in err_str:
-        return "The request took too long. Try again."
-    return "Something went wrong. Please try again."
+        return "La requête a pris trop de temps. Réessayez."
+    return "Une erreur s'est produite. Veuillez réessayer."
 
 
 class ChatRequest(BaseModel):
@@ -177,8 +127,7 @@ def chat(req: ChatRequest) -> ChatResponse | ChatError:
         messages = result.get("messages") or []
         raw_reply = _extract_reply(messages)
         reply = redact_for_telegram(raw_reply)
-        sources = _get_sources_from_messages(messages)
-        footer = _format_final_footer(sources)
+        footer = _format_final_footer()
         reply = (reply + footer) if reply else footer.strip()
 
         image_base64 = None
@@ -205,7 +154,7 @@ def clear_memory(req: ClearMemoryRequest) -> dict:
 
         with SqliteSaver.from_conn_string(str(CHAT_MEMORY_DB)) as checkpointer:
             checkpointer.delete_thread(req.thread_id)
-        return {"ok": True, "message": "Conversation memory cleared."}
+        return {"ok": True, "message": "Mémoire de conversation effacée."}
     except Exception as e:
         logger.exception("Clear memory error: %s", e)
         return {"ok": False, "error": _user_friendly_error(e)}

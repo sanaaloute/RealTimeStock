@@ -80,7 +80,7 @@ def ensure_series_csv(symbol: str) -> Path | None:
 def ensure_timeseries_up_to_date(symbol: str) -> dict[str, Any]:
     status = get_series_status(symbol)
     if status["up_to_date"] and status["path"]:
-        return {"symbol": symbol, "action": "skipped", "path": status["path"], "message": "Already up to date."}
+        return {"symbol": symbol, "action": "skipped", "path": status["path"], "message": "Déjà à jour."}
     scraper = RichBourseTimeseriesScraper(symbol=symbol, output_dir=DATA_SERIES_DIR)
     result = scraper.scrape()
     if result.get("error"):

@@ -36,19 +36,22 @@ def http_get(
     timeout: float | None = None,
     headers: dict[str, str] | None = None,
     retries: int = HTTP_GET_RETRIES,
+    verify: bool = True,
 ) -> httpx.Response:
     """
     GET url with SSL verification via certifi and configurable timeout.
     Retries on transient SSL/connection errors (e.g. UNEXPECTED_EOF_WHILE_READING).
+    Set verify=False to skip certificate verification (e.g. for hosts with bad chains).
     Caller should call response.raise_for_status() and use response.text as needed.
     """
     timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
     request_headers = headers if headers is not None else {"User-Agent": DEFAULT_USER_AGENT}
+    verify_ctx: bool | ssl.SSLContext = _SSL_CONTEXT if verify else False
     last_exc: BaseException | None = None
     for attempt in range(max(1, retries)):
         try:
             with httpx.Client(
-                verify=_SSL_CONTEXT,
+                verify=verify_ctx,
                 timeout=httpx.Timeout(timeout),
             ) as client:
                 return client.get(url, headers=request_headers)

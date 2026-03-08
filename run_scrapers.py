@@ -14,7 +14,13 @@ import sys
 from typing import Any
 
 import config
-from app.scrapers import SikaFinanceScraper, RichBourseScraper, RichBourseTimeseriesScraper, BRVMScraper
+from app.scrapers import (
+    BRVMScraper,
+    RichBourseScraper,
+    RichBourseTimeseriesScraper,
+    SikaFinanceScraper,
+    fetch_and_save_sgi,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,6 +34,7 @@ SCRAPERS = {
     "richbourse": (RichBourseScraper, config.RICHBOURSE_URL),
     "richbourse_timeseries": (RichBourseTimeseriesScraper, "https://www.richbourse.com/common/mouvements/index"),
     "brvm": (BRVMScraper, config.BRVM_URL),
+    "sgi": (None, "https://www.richbourse.com/common/apprendre/liste-sgi"),  # worker: fetch_and_save_sgi (Rich Bourse only)
 }
 
 
@@ -69,7 +76,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not config.TAVILY_API_KEY:
+    if args.site != "sgi" and not config.TAVILY_API_KEY:
         logger.error("TAVILY_API_KEY is not set. Create a .env file from .env.example.")
         return 1
 
@@ -85,6 +92,17 @@ def main() -> int:
         if name == "richbourse_timeseries" and not args.symbol:
             continue
         ScraperCls, url = SCRAPERS[name]
+        if name == "sgi":
+            logger.info("Fetching SGI (BRVM brokers) from Rich Bourse (list + detail pages)")
+            try:
+                data = fetch_and_save_sgi()
+                results[name] = _to_json_safe(data)
+                if not args.json:
+                    logger.info("  -> %s", _summary(data, name))
+            except Exception as e:
+                logger.exception("SGI fetch failed: %s", e)
+                results[name] = {"error": str(e), "source": name, "url": url}
+            continue
         display_url = f"{url}/{args.symbol}" if name == "richbourse_timeseries" and args.symbol else url
         extra = f", period={args.period}" if name == "sikafinance" else (
             f", period={args.period}, progression={args.progression}" if name == "richbourse" else (
@@ -161,6 +179,8 @@ def _summary(data: dict, site: str) -> str:
         if data.get("stocks"):
             parts.append(f"stocks={len(data['stocks'])}")
         return ", ".join(parts) if parts else "no structured data"
+    if site == "sgi":
+        return f"path={data.get('path', '')}, count={data.get('count', 0)} SGI"
     # Generic fallback
     parts = []
     for key in ("indices", "stocks", "brvm_stocks", "top_gains", "top_losses"):

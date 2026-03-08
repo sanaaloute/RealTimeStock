@@ -25,7 +25,7 @@ def fetch_company_news(symbol: str, limit: int = 15) -> dict[str, Any]:
     symbol = (symbol or "").strip().upper()
     out: dict[str, Any] = {"source": "richbourse_news", "symbol": symbol, "url": "", "items": [], "error": None}
     if not symbol:
-        out["error"] = "symbol is required"
+        out["error"] = "Le symbole est requis."
         return out
 
     url = f"{BASE_URL}/{symbol}"

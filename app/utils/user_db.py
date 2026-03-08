@@ -121,14 +121,14 @@ def portfolio_add(telegram_id: int, symbol: str, buy_price: float, buy_date: str
     get_or_create_user(telegram_id)
     symbol = (symbol or "").strip().upper()
     if symbol not in get_valid_symbols():
-        return {"ok": False, "error": f"{symbol} is not a listed BRVM symbol."}
+        return {"ok": False, "error": f"{symbol} n'est pas un symbole BRVM coté."}
     try:
         d = date.fromisoformat(buy_date.strip()[:10])
         buy_date_str = d.isoformat()
     except ValueError:
-        return {"ok": False, "error": f"Invalid buy_date. Use YYYY-MM-DD."}
+        return {"ok": False, "error": "Date d'achat invalide. Utilisez AAAA-MM-JJ."}
     if buy_price <= 0 or quantity <= 0:
-        return {"ok": False, "error": "buy_price and quantity must be positive."}
+        return {"ok": False, "error": "Le prix d'achat et la quantité doivent être positifs."}
     conn = _get_conn()
     try:
         conn.execute(
@@ -139,7 +139,7 @@ def portfolio_add(telegram_id: int, symbol: str, buy_price: float, buy_date: str
             (telegram_id, symbol, buy_price, buy_date_str, quantity),
         )
         conn.commit()
-        return {"ok": True, "message": f"Added/updated {symbol}: {quantity} @ {buy_price} F CFA on {buy_date_str}."}
+        return {"ok": True, "message": f"Ajout/mise à jour : {symbol} : {quantity} @ {buy_price} F CFA le {buy_date_str}."}
     except sqlite3.Error as e:
         return {"ok": False, "error": str(e)}
     finally:
@@ -168,8 +168,8 @@ def portfolio_remove(telegram_id: int, symbol: str) -> dict[str, Any]:
         cur = conn.execute("DELETE FROM portfolio WHERE telegram_id = ? AND symbol = ?", (telegram_id, symbol))
         conn.commit()
         if cur.rowcount:
-            return {"ok": True, "message": f"Removed {symbol} from your portfolio."}
-        return {"ok": False, "error": f"No position in {symbol} in your portfolio."}
+            return {"ok": True, "message": f"{symbol} retiré de votre portefeuille."}
+        return {"ok": False, "error": f"Aucune position {symbol} dans votre portefeuille."}
     finally:
         conn.close()
 
@@ -241,13 +241,13 @@ def tracking_list(telegram_id: int) -> list[dict[str, Any]]:
 def tracking_add(telegram_id: int, symbol: str) -> dict[str, Any]:
     symbol = (symbol or "").strip().upper()
     if symbol not in get_valid_symbols():
-        return {"ok": False, "error": f"{symbol} is not a listed BRVM symbol."}
+        return {"ok": False, "error": f"{symbol} n'est pas un symbole BRVM coté."}
     get_or_create_user(telegram_id)
     conn = _get_conn()
     try:
         conn.execute("INSERT OR IGNORE INTO tracking (telegram_id, symbol) VALUES (?, ?)", (telegram_id, symbol))
         conn.commit()
-        return {"ok": True, "message": f"Added {symbol} to your tracking list."}
+        return {"ok": True, "message": f"{symbol} ajouté à votre liste de suivi."}
     except sqlite3.Error as e:
         return {"ok": False, "error": str(e)}
     finally:
@@ -261,8 +261,8 @@ def tracking_remove(telegram_id: int, symbol: str) -> dict[str, Any]:
         cur = conn.execute("DELETE FROM tracking WHERE telegram_id = ? AND symbol = ?", (telegram_id, symbol))
         conn.commit()
         if cur.rowcount:
-            return {"ok": True, "message": f"Removed {symbol} from tracking."}
-        return {"ok": False, "error": f"{symbol} was not in your tracking list."}
+            return {"ok": True, "message": f"{symbol} retiré du suivi."}
+        return {"ok": False, "error": f"{symbol} n'était pas dans votre liste de suivi."}
     finally:
         conn.close()
 
@@ -271,9 +271,9 @@ def tracking_remove(telegram_id: int, symbol: str) -> dict[str, Any]:
 def target_add(telegram_id: int, symbol: str, target_price: float, direction: str = "above") -> dict[str, Any]:
     symbol = (symbol or "").strip().upper()
     if symbol not in get_valid_symbols():
-        return {"ok": False, "error": f"{symbol} is not a listed BRVM symbol."}
+        return {"ok": False, "error": f"{symbol} n'est pas un symbole BRVM coté."}
     if target_price <= 0:
-        return {"ok": False, "error": "Target price must be positive."}
+        return {"ok": False, "error": "Le prix cible doit être positif."}
     direction = (direction or "above").strip().lower()
     if direction not in ("above", "below"):
         direction = "above"
@@ -285,7 +285,8 @@ def target_add(telegram_id: int, symbol: str, target_price: float, direction: st
             (telegram_id, symbol, target_price, direction),
         )
         conn.commit()
-        return {"ok": True, "message": f"Alert set: notify when {symbol} goes {direction} {target_price} F CFA."}
+        dir_fr = "au-dessus" if direction == "above" else "en dessous"
+        return {"ok": True, "message": f"Alerte définie : notification quand {symbol} atteint {target_price} F CFA ({dir_fr})."}
     except sqlite3.Error as e:
         return {"ok": False, "error": str(e)}
     finally:
@@ -312,8 +313,8 @@ def target_remove(telegram_id: int, symbol: str) -> dict[str, Any]:
         cur = conn.execute("DELETE FROM target_alerts WHERE telegram_id = ? AND symbol = ?", (telegram_id, symbol))
         conn.commit()
         if cur.rowcount:
-            return {"ok": True, "message": f"Removed price alert for {symbol}."}
-        return {"ok": False, "error": f"No alert set for {symbol}."}
+            return {"ok": True, "message": f"Alerte de prix supprimée pour {symbol}."}
+        return {"ok": False, "error": f"Aucune alerte définie pour {symbol}."}
     finally:
         conn.close()
 
