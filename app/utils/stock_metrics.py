@@ -33,7 +33,7 @@ def get_stock_metrics(
 
     valid = get_valid_symbols()
     if symbol and symbol not in valid:
-        out["error"] = f"{symbol} is not a listed BRVM symbol. This assistant only covers BRVM (Bourse Régionale des Valeurs Mobilières)."
+        out["error"] = f"{symbol} n'est pas un symbole BRVM coté. Cet assistant ne couvre que la BRVM (Bourse Régionale des Valeurs Mobilières)."
         return out
 
     if at_time is None:

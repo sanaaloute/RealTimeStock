@@ -1,26 +1,27 @@
-"""Help message for new users and /help."""
+"""Message d'aide pour les nouveaux utilisateurs et /help."""
 
-HELP_MESSAGE = """Welcome to the BRVM Stock Assistant.
+HELP_MESSAGE = """Bienvenue sur l'assistant Bourse BRVM.
 
-This bot helps you with the BRVM (Bourse Régionale des Valeurs Mobilières) stock market. All prices are in F CFA.
+Ce bot vous aide avec la Bourse Régionale des Valeurs Mobilières (BRVM). Tous les cours sont en F CFA.
 
-What you can do:
+Ce que vous pouvez faire :
 
-• Ask for prices: "What is the price of NTLC?" or "Compare NTLC and SLBC"
-• Market overview: "Most traded stock on BRVM?" or "Top gainers"
-• Charts: "Plot NTLC from 2025-01-01 to 2025-02-21"
-• News: "Latest news about Sonatel" or "BRVM market news"
-• BRVM basics: "What is BRVM?" or "How to invest on BRVM?"
+• Cours : « Quel est le cours de NTLC ? » ou « Compare NTLC et SLBC »
+• Vue d'ensemble : « Action la plus tradée sur la BRVM ? » ou « Top gains »
+• Graphiques : « Graphique NTLC du 2025-01-01 au 2025-02-21 »
+• Actualités : « Dernières actualités sur Sonatel » ou « Actualités du marché BRVM »
+• Bases BRVM : « C'est quoi la BRVM ? » ou « Comment investir sur la BRVM ? »
+• Courtiers (SGI) : « Liste des SGI » ou « Où ouvrir un compte pour acheter des actions BRVM ? »
 
-Portfolio and alerts (your personal data):
+Portefeuille et alertes (vos données personnelles) :
 
-• Portfolio: "Show my portfolio" / "Add NTLC to my portfolio: bought at 50000 on 2025-01-15" / "Remove NTLC from my portfolio" / "Portfolio growth"
-• Tracking: "Add NTLC to my tracking list" / "What am I tracking?" / "Remove NTLC from tracking"
-• Price alerts: "Notify me when NTLC reaches 55000" / "My price targets" / "Remove alert for NTLC"
+• Portefeuille : « Affiche mon portefeuille » / « Ajoute NTLC à mon portefeuille : acheté à 50000 le 2025-01-15 » / « Retire NTLC de mon portefeuille » / « Évolution de mon portefeuille »
+• Suivi : « Ajoute NTLC à ma liste de suivi » / « Qu'est-ce que je suis ? » / « Retire NTLC du suivi »
+• Alertes de prix : « Préviens-moi quand NTLC atteint 55000 » / « Mes alertes de prix » / « Supprime l'alerte pour NTLC »
 
-• Clear conversation memory: send /clearmemory to delete the bot's memory of this chat and start fresh.
+• Effacer la mémoire : envoyez /clearmemory pour supprimer la mémoire de la conversation et repartir à zéro.
 
-You can type or send a voice message. Say "help" anytime to see this message again."""
+Vous pouvez taper ou envoyer un message vocal. Dites « aide » à tout moment pour revoir ce message."""
 
 
 def get_help_message() -> str:

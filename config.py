@@ -20,6 +20,8 @@ BRVM_URL = "https://www.brvm.org/"
 BRVM_ANNOUNCEMENTS_URL = "https://www.brvm.org/fr/emetteurs/type-annonces/convocations-assemblees-generales"
 
 BRVM_API_URL = os.getenv("BRVM_API_URL", "http://localhost:8000").rstrip("/")
+# Set BRVM_VERIFY_SSL=0 or false to skip SSL verification for brvm.org (e.g. certificate chain issues)
+BRVM_VERIFY_SSL = os.getenv("BRVM_VERIFY_SSL", "true").strip().lower() not in ("0", "false", "no")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 ALLOWED_TELEGRAM_IDS: list[int] = []
 _raw = os.getenv("ALLOWED_TELEGRAM_IDS", "").strip()

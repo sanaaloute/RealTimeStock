@@ -31,7 +31,7 @@ VOICE_LANGUAGE = "fr-FR"  # BRVM / West Africa; use "en-US" for English
 API_TIMEOUT = 300.0  # Agent + LLM can take several minutes (NLU, supervisor, workers)
 STATUS_UPDATE_INTERVAL_SEC = 5  # Update "please wait" message every N seconds
 WAIT_SPINNER = ("◐", "◓", "◑", "◒")
-WAIT_MESSAGE = "Please wait — I'm fetching BRVM data. This may take up to a minute."
+WAIT_MESSAGE = "Veuillez patienter — je récupère les données BRVM. Cela peut prendre jusqu'à une minute."
 
 
 def _is_local_api() -> bool:
@@ -54,7 +54,7 @@ async def _call_chat_api(query: str, thread_id: str, telegram_user_id: int) -> d
                     return data
             except Exception as e:
                 logger.debug("Chat API response not JSON: %s", e)
-            return {"error": "The AI service is temporarily unavailable. Try again in a moment."}
+            return {"error": "Le service IA est temporairement indisponible. Réessayez dans un instant."}
         return resp.json()
 
 
@@ -70,12 +70,12 @@ async def _call_clear_memory(thread_id: str) -> dict[str, Any]:
             try:
                 return resp.json()
             except Exception:
-                return {"ok": True, "message": "Conversation memory cleared."}
+                return {"ok": True, "message": "Mémoire de conversation effacée."}
         try:
             data = resp.json()
-            return data if isinstance(data, dict) else {"ok": False, "error": "Failed to clear memory."}
+            return data if isinstance(data, dict) else {"ok": False, "error": "Échec de l'effacement de la mémoire."}
         except Exception:
-            return {"ok": False, "error": "The API could not clear memory. Try again."}
+            return {"ok": False, "error": "L'API n'a pas pu effacer la mémoire. Réessayez."}
 
 
 async def _status_updater(
@@ -145,8 +145,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = await _get_query_from_message(update, context)
     if not query:
         await update.message.reply_text(
-            "Send a text message or a voice note with your question (e.g. price of NTLC, compare two stocks). "
-            "If you sent voice and this appears, the audio could not be transcribed."
+            "Envoyez un message texte ou un message vocal avec votre question (ex. cours de NTLC, comparer deux actions). "
+            "Si vous avez envoyé un vocal et que ce message s'affiche, l'audio n'a pas pu être transcrit."
         )
         return
 
@@ -173,7 +173,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             except asyncio.CancelledError:
                 pass
         logger.warning("API call timed out for user %s", user_id)
-        await status.edit_text("The AI took too long to respond. Try again.")
+        await status.edit_text("L'assistant a mis trop de temps à répondre. Réessayez.")
         return
     except Exception as e:
         if updater_task and not updater_task.done():
@@ -183,7 +183,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             except asyncio.CancelledError:
                 pass
         logger.exception("API call failed for user %s: %s", user_id, e)
-        await status.edit_text("Could not reach the AI service. Try again in a moment.")
+        await status.edit_text("Impossible de joindre le service IA. Réessayez dans un instant.")
         return
     finally:
         if updater_task and not updater_task.done():
@@ -199,11 +199,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     reply = result.get("reply", "")
     if len(reply) > MAX_MESSAGE_LENGTH:
-        reply = reply[: MAX_MESSAGE_LENGTH - 20] + "\n\n… (truncated)"
+        reply = reply[: MAX_MESSAGE_LENGTH - 20] + "\n\n… (tronqué)"
 
     image_base64 = result.get("image_base64")
     if image_base64:
-        caption = reply[:MAX_CAPTION_LENGTH] if len(reply) <= MAX_CAPTION_LENGTH else reply[: MAX_CAPTION_LENGTH - 20] + "\n… (truncated)"
+        caption = reply[:MAX_CAPTION_LENGTH] if len(reply) <= MAX_CAPTION_LENGTH else reply[: MAX_CAPTION_LENGTH - 20] + "\n… (tronqué)"
         await status.delete()
         try:
             img_bytes = base64.b64decode(image_base64)
@@ -239,12 +239,12 @@ async def cmd_clearmemory(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         result = await _call_clear_memory(thread_id)
         if result.get("ok"):
-            await update.message.reply_text("Conversation memory cleared. You can start a new conversation.")
+            await update.message.reply_text("Mémoire de conversation effacée. Vous pouvez reprendre une nouvelle conversation.")
         else:
-            await update.message.reply_text(result.get("error", "Failed to clear memory. Try again."))
+            await update.message.reply_text(result.get("error", "Échec de l'effacement de la mémoire. Réessayez."))
     except Exception as e:
         logger.warning("Clear memory failed for user %s: %s", user_id, e)
-        await update.message.reply_text("Could not clear memory. Make sure the API is running and try again.")
+        await update.message.reply_text("Impossible d'effacer la mémoire. Vérifiez que l'API tourne et réessayez.")
 
 
 async def _global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -268,7 +268,7 @@ async def _global_error_handler(update: object, context: ContextTypes.DEFAULT_TY
     if isinstance(update, Update) and update.effective_chat and update.effective_message and is_retryable:
         try:
             await update.effective_message.reply_text(
-                "Connection problem. Please try again in a moment."
+                "Problème de connexion. Veuillez réessayer dans un instant."
             )
         except Exception:
             pass

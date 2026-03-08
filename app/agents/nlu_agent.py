@@ -32,9 +32,9 @@ Unknown symbol or other exchange → CLARIFY.
 
 **General market questions (NO symbol required):** For "most expensive stock", "highest price stock", "lowest price stock", "cheapest stock", "what is the cheapest?", "should I buy the lowest price stock?" — use intent **market_overview**, suggested_worker **analytics**, and leave entities empty or omit symbol. Do NOT ask for a symbol; the analytics worker will compute from all BRVM stocks.
 
-**Intents (exact):** market_overview | price_query | compare | chart | metrics | news | prediction | scrape | update_timeseries | brvm_basics | portfolio_display | portfolio_add | portfolio_remove | tracking_list | tracking_add | target_set | target_list | general
+**Intents (exact):** market_overview | price_query | compare | chart | metrics | news | prediction | scrape | update_timeseries | brvm_basics | portfolio_display | portfolio_add | portfolio_remove | tracking_list | tracking_add | target_set | target_list | sgi | general
 
-**Worker:** analytics (prices, compare, stats, overview) | charts (plot) | timeseries (CSV) | scraper (raw fetch) | news | prediction (trends, hausse/baisse/neutre, technical prediction for a stock) | portfolio
+**Worker:** analytics (prices, compare, stats, overview) | charts (plot) | timeseries (CSV) | scraper (raw fetch) | news | prediction (trends, hausse/baisse/neutre, technical prediction for a stock) | portfolio | sgi (courtiers BRVM, liste SGI, où ouvrir un compte, tarifs courtiers)
 
 **Output:**
 A) Unclear → CLARIFY: <short question>
@@ -62,7 +62,7 @@ def _parse_nlu_response(content: str) -> tuple[dict[str, Any] | None, str | None
         if unknown:
             return (
                 None,
-                f"Company or symbol not found on BRVM: {', '.join(unknown)}. Please use a symbol from the BRVM list (e.g. NTLC, SLBC, SNTS, Sonatel, Solibra, Nestlé).",
+                f"Société ou symbole introuvable sur la BRVM : {', '.join(unknown)}. Utilisez un symbole de la liste BRVM (ex. NTLC, SLBC, SNTS, Sonatel, Solibra, Nestlé).",
             )
         return {
             "intent": intent,
@@ -101,7 +101,7 @@ def _parse_nlu_response(content: str) -> tuple[dict[str, Any] | None, str | None
                         pass
                     break
     # Fallback: treat as unclear
-    return None, "Could you rephrase your question? For example: 'What is the price of NTLC?' or 'Plot SLBC from 2025-01-01 to 2025-02-21'."
+    return None, "Pouvez-vous reformuler votre question ? Par exemple : « Quel est le cours de NTLC ? » ou « Graphique SLBC du 2025-01-01 au 2025-02-21 »."
 
 
 def run_nlu_node(state: dict, model: str) -> dict:

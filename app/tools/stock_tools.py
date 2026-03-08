@@ -7,6 +7,7 @@ from typing import Any
 from langchain_core.tools import StructuredTool  # pyright: ignore[reportMissingImports]
 
 from app.scrapers import BRVMScraper, RichBourseScraper, RichBourseTimeseriesScraper, SikaFinanceScraper
+from app.scrapers.sgi_brvm import fetch_and_save_sgi, load_sgi_local, SGI_JSON_PATH
 from app.utils import compare_stocks, compute_metrics, get_stock_metrics, get_timeseries
 from app.utils._data import (
     ensure_timeseries_up_to_date,
@@ -43,6 +44,9 @@ from .schemas import (
     ScrapeRichbourseInput,
     ScrapeRichbourseTimeseriesInput,
     ScrapeSikafinanceInput,
+    GetSgiDataInput,
+    FetchSgiDataInput,
+    FetchSgiUrlInput,
 )
 
 SLEEP = config.SLEEP_SECONDS
@@ -145,11 +149,66 @@ def _get_brvm_basics(**kwargs: Any) -> str:
     return get_brvm_basics()
 
 
+def _get_sgi_data(name_filter: str | None = None, country_filter: str | None = None, **kwargs: Any) -> str:
+    """Read SGI data from app/data/sgi_brvm.json. If file missing, tell caller to use fetch_sgi_data."""
+    from pathlib import Path
+    if not Path(SGI_JSON_PATH).exists():
+        return json.dumps({
+            "error": "no_local_data",
+            "message": "Aucune donnée SGI locale. Utilisez fetch_sgi_data pour télécharger depuis Rich Bourse (enregistré dans app/data/sgi_brvm.json).",
+        }, ensure_ascii=False)
+    data = load_sgi_local()
+    sgi_list = data.get("sgi") or []
+    if name_filter and (name_filter := str(name_filter).strip()):
+        name_lower = name_filter.lower()
+        sgi_list = [s for s in sgi_list if name_lower in (s.get("name") or "").lower()]
+    if country_filter and (country_filter := str(country_filter).strip()):
+        country_lower = country_filter.lower()
+        sgi_list = [
+            s for s in sgi_list
+            if country_lower in (s.get("country") or "").lower()
+            or country_lower in (s.get("other_countries") or "").lower()
+        ]
+    return json.dumps({
+        "source": data.get("source_name"),
+        "updated_at": data.get("updated_at"),
+        "count": len(sgi_list),
+        "sgi": sgi_list,
+    }, ensure_ascii=False, default=str)
+
+
+def _fetch_sgi_data(**kwargs: Any) -> str:
+    """Fetch SGI list from Rich Bourse (list + detail pages) and save to app/data/sgi_brvm.json."""
+    result = fetch_and_save_sgi()
+    return json.dumps(result, ensure_ascii=False, default=str)
+
+
+def _fetch_sgi_url(url: str, **kwargs: Any) -> str:
+    """Fetch content from a URL (e.g. SGI detail page, tarifs, or website). Returns text summary or error."""
+    from app.utils.http_client import http_get
+    url = (url or "").strip()
+    if not url or not url.startswith("http"):
+        return json.dumps({"error": "URL invalide."}, ensure_ascii=False)
+    try:
+        resp = http_get(url, timeout=15, verify=True)
+        resp.raise_for_status()
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(resp.text, "html.parser")
+        text = soup.get_text(separator="\n", strip=True)
+        return json.dumps({
+            "url": url,
+            "text_preview": text[:4000] if len(text) > 4000 else text,
+            "length": len(text),
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"url": url, "error": str(e)}, ensure_ascii=False)
+
+
 def _get_company_info(symbol: str, **kwargs: Any) -> str:
     sym = (symbol or "").strip().upper()
     valid = get_valid_symbols()
     if sym not in valid:
-        return json.dumps({"error": f"Unknown symbol: {symbol}. Use a valid BRVM symbol."}, ensure_ascii=False)
+        return json.dumps({"error": f"Symbole inconnu : {symbol}. Utilisez un symbole BRVM valide."}, ensure_ascii=False)
     name = get_symbol_to_name().get(sym, sym)
     sector = get_symbol_to_sector().get(sym, "")
     return json.dumps(
@@ -176,7 +235,7 @@ def _plot_company_chart(
             "start_date": data.get("start_date"),
             "end_date": data.get("end_date"),
             "points_count": data.get("points_count"),
-            "message": f"Chart saved. Send image at {data.get('image_path')} with your explanation.",
+            "message": f"Graphique enregistré. Envoyez l'image à {data.get('image_path')} avec votre explication.",
         },
         ensure_ascii=False,
         default=str,
@@ -307,4 +366,25 @@ get_company_info_tool = StructuredTool.from_function(
     name="get_company_info",
     description="Get full company name and sector for a BRVM symbol. Use when you need to explain what a company does or its sector of activity.",
     args_schema=GetCompanyInfoInput,
+)
+
+get_sgi_data_tool = StructuredTool.from_function(
+    func=_get_sgi_data,
+    name="get_sgi_data",
+    description="Read SGI (brokers) data from local file app/data/sgi_brvm.json. Use name_filter or country_filter to narrow results. If file is missing, use fetch_sgi_data first.",
+    args_schema=GetSgiDataInput,
+)
+
+fetch_sgi_data_tool = StructuredTool.from_function(
+    func=_fetch_sgi_data,
+    name="fetch_sgi_data",
+    description="Fetch full SGI list from Rich Bourse and save to app/data/sgi_brvm.json. Call this when local data is missing or user asks to refresh SGI data.",
+    args_schema=FetchSgiDataInput,
+)
+
+fetch_sgi_url_tool = StructuredTool.from_function(
+    func=_fetch_sgi_url,
+    name="fetch_sgi_url",
+    description="Fetch content from a URL (e.g. SGI detail_url, tarifs_url, documents_url, or website). Use when user needs details from a specific SGI link.",
+    args_schema=FetchSgiUrlInput,
 )

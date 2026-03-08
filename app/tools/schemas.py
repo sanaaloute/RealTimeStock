@@ -194,3 +194,23 @@ class GetTrendsByOptionInput(BaseModel):
 
 class GetStockPredictionDetailInput(BaseModel):
     symbol: str = Field(description="BRVM symbol (e.g. SPHC, SOGC, NTLC) for full technical prediction details.")
+
+
+# SGI (brokers) tools
+class GetSgiDataInput(BaseModel):
+    name_filter: str | None = Field(
+        default=None,
+        description="Optional: filter SGIs by name (partial match). Omit to return all.",
+    )
+    country_filter: str | None = Field(
+        default=None,
+        description="Optional: filter by country (e.g. Côte d'Ivoire, Sénégal). Omit to return all.",
+    )
+
+
+class FetchSgiDataInput(BaseModel):
+    pass
+
+
+class FetchSgiUrlInput(BaseModel):
+    url: str = Field(description="Full URL to fetch (e.g. SGI detail_url, tarifs_url, website).")

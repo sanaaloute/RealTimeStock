@@ -38,7 +38,7 @@ def fetch_richbourse_prediction(symbol: str) -> dict[str, Any]:
         "error": None,
     }
     if not symbol:
-        out["error"] = "symbol is required"
+        out["error"] = "Le symbole est requis."
         return out
 
     url = f"{PREDICTION_BASE}/{symbol}"

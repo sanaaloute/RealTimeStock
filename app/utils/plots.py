@@ -47,7 +47,7 @@ def plot_timeseries(
             "end_date": end.isoformat(),
             "image_path": None,
             "points_count": 0,
-            "error": "No data for this period.",
+            "error": "Aucune donnée pour cette période.",
         }
 
     dates = [r["date"] for r in rows]

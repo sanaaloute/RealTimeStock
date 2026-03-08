@@ -25,7 +25,7 @@ def get_company_news(symbol: str, limit: int = 15) -> dict[str, Any]:
     if not resolved and symbol and out.get("items"):
         out["resolved_symbol"] = sym
     if not out.get("items") and out.get("error") is None and not sym:
-        out["error"] = "Unknown company. Use a valid BRVM symbol or company name."
+        out["error"] = "Société inconnue. Utilisez un symbole ou un nom de société BRVM valide."
     return out
 
 

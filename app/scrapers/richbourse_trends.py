@@ -61,7 +61,7 @@ def fetch_richbourse_trends_index(
     }
     option = (trend_option or "").strip().lower()
     if option and option not in TREND_OPTIONS:
-        out["error"] = f"trend_option must be one of: {', '.join(TREND_OPTIONS)}"
+        out["error"] = f"trend_option doit être l'un de : {', '.join(TREND_OPTIONS)}"
         return out
 
     # URL: index or index/0/hausse (page 0, then trend)
