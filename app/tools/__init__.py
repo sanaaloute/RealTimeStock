@@ -4,8 +4,10 @@ from langchain_core.tools import BaseTool
 from .stock_tools import (
     compare_stocks_tool,
     compute_metrics_tool,
+    fetch_company_details_tool,
     fetch_sgi_data_tool,
     fetch_sgi_url_tool,
+    get_company_details_tool,
     get_sgi_data_tool,
     get_stock_metrics_tool,
     get_timeseries_tool,
@@ -27,6 +29,8 @@ TOOLS: list[BaseTool] = [
     get_sgi_data_tool,
     fetch_sgi_data_tool,
     fetch_sgi_url_tool,
+    get_company_details_tool,
+    fetch_company_details_tool,
 ]
 
 
@@ -49,4 +53,6 @@ __all__ = [
     "get_sgi_data_tool",
     "fetch_sgi_data_tool",
     "fetch_sgi_url_tool",
+    "get_company_details_tool",
+    "fetch_company_details_tool",
 ]

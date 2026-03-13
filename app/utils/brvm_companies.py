@@ -19,9 +19,17 @@ COL_COUNTRY = "Country"
 
 _symbol_to_name: dict[str, str] = {}
 _symbol_to_sector: dict[str, str] = {}
+_symbol_to_country: dict[str, str] = {}  # symbol -> 2-letter country code (ml, sn, ci, bj, ...)
 _name_to_symbol: dict[str, str] = {}
 _valid_symbols: set[str] = set()
 _loaded = False
+
+# BRVM country name (from Excel) -> Sika Finance URL suffix (2-letter)
+_COUNTRY_TO_CODE: dict[str, str] = {
+    "mali": "ml", "sénégal": "sn", "senegal": "sn", "côte d'ivoire": "ci", "cote d'ivoire": "ci",
+    "bénin": "bj", "benin": "bj", "burkina faso": "bf", "niger": "ne", "togo": "tg",
+    "guinée-bissau": "gw", "guinee-bissau": "gw",
+}
 
 # Common words that cause wrong symbol resolution when mapped by single word
 _STOP_WORDS = frozenset({
@@ -47,11 +55,12 @@ def _cell_value(v: Any) -> str:
 
 
 def _load() -> None:
-    global _symbol_to_name, _symbol_to_sector, _name_to_symbol, _valid_symbols, _loaded
+    global _symbol_to_name, _symbol_to_sector, _symbol_to_country, _name_to_symbol, _valid_symbols, _loaded
     if _loaded:
         return
     _symbol_to_name = {}
     _symbol_to_sector = {}
+    _symbol_to_country = {}
     _name_to_symbol = {}
     _valid_symbols = set()
     if not BRVM_COMPANIES_FILE.exists():
@@ -91,6 +100,7 @@ def _load() -> None:
     symbol_col = col_index.get(COL_SYMBOL.lower(), col_index.get("symbol", -1))
     sector_col = col_index.get(COL_SECTOR.lower(), col_index.get("sector", -1))
     industry_col = col_index.get(COL_INDUSTRY_CLUSTER.lower(), -1)
+    country_col = col_index.get(COL_COUNTRY.lower(), col_index.get("country", -1))
     if symbol_col < 0 or name_col < 0:
         logger.warning("BRVM_Companies.xlsx: expected columns %r and %r in %s", COL_SYMBOL, COL_NAME, list(col_index))
         _loaded = True
@@ -107,10 +117,15 @@ def _load() -> None:
         sector = _cell_value(cells[sector_col]) if sector_col >= 0 and sector_col < len(cells) else ""
         if not sector and industry_col >= 0 and industry_col < len(cells):
             sector = _cell_value(cells[industry_col])
+        country_name = _cell_value(cells[country_col]) if country_col >= 0 and country_col < len(cells) else ""
         _valid_symbols.add(symbol)
         _symbol_to_name[symbol] = name_part or symbol
         if sector:
             _symbol_to_sector[symbol] = sector
+        if country_name:
+            code = _COUNTRY_TO_CODE.get(country_name.strip().lower(), "").strip() or country_name.strip()[:2].lower() if len(country_name.strip()) >= 2 else ""
+            if code:
+                _symbol_to_country[symbol] = code
         _name_to_symbol[_normalize(name_part)] = symbol
         _name_to_symbol[_normalize(symbol)] = symbol
         for word in (name_part or "").replace(",", " ").replace("|", " ").replace("(", " ").replace(")", " ").split():
@@ -136,6 +151,19 @@ def get_symbol_to_sector() -> dict[str, str]:
     """Return mapping symbol -> sector (empty string if not set)."""
     _load()
     return dict(_symbol_to_sector)
+
+
+def get_symbol_to_country() -> dict[str, str]:
+    """Return mapping symbol -> 2-letter country code (ml, sn, ci, bj, etc.) for Sika Finance URLs."""
+    _load()
+    return dict(_symbol_to_country)
+
+
+def get_country_code_for_symbol(symbol: str) -> str:
+    """Return 2-letter country code for symbol. Default 'ci' (Côte d'Ivoire) if unknown."""
+    _load()
+    sym = (symbol or "").strip().upper()
+    return _symbol_to_country.get(sym, "ci")
 
 
 def get_name_to_symbol() -> dict[str, str]:
