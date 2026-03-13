@@ -31,6 +31,7 @@ from app.agents.timeseries_agent import create_timeseries_agent, get_timeseries_
 from app.agents.portfolio_agent import create_portfolio_agent, get_portfolio_agent_system
 from app.agents.prediction_agent import create_prediction_agent, get_prediction_agent_system
 from app.agents.sgi_agent import create_sgi_agent, get_sgi_agent_system
+from app.agents.company_details_agent import create_company_details_agent, get_company_details_agent_system
 
 MEMORY_MAX_MESSAGES = 10  # Keep only last 10 messages (user + final AI pairs)
 
@@ -79,9 +80,10 @@ SUPERVISOR_SYSTEM_TEMPLATE = """BRVM router. Output one label only. {time_line}
 - PREDICTION — Stock predictions, trends table, hausse/baisse/neutre, technical trend for a symbol
 - PORTFOLIO — My portfolio, tracking list, price alerts
 - SGI — Brokers/courtiers BRVM (liste des SGI, où ouvrir un compte, tarifs, contacts)
+- COMPANY_DETAILS — Single-company fiche société: actionnaires, dividende, résultat net, croissance, BNPA, PER, présentation, dirigeants (Sika Finance; data cached per symbol)
 - FINISH — Done, greeting, or off-topic
 
-**Output:** SCRAPER | ANALYTICS | TIMESERIES | CHARTS | NEWS | PREDICTION | PORTFOLIO | SGI | FINISH
+**Output:** One of SCRAPER | ANALYTICS | TIMESERIES | CHARTS | NEWS | PREDICTION | PORTFOLIO | SGI | COMPANY_DETAILS | FINISH
 (For multi: ANALYTICS,NEWS or SCRAPER|CHARTS — do NOT include TIMESERIES in multi.)"""
 
 
@@ -141,6 +143,8 @@ def _label_to_worker(label: str) -> WorkerName | Literal["FINISH"] | None:
         return "portfolio"
     if "SGI" in label or "COURTIER" in label or "BROKER" in label:
         return "sgi"
+    if "COMPANY_DETAILS" in label or "FICHE" in label or "SOCIÉTÉ" in label or "SOCIETE" in label or "ACTIONNAIRES" in label or "DIVIDENDE" in label or "RÉSULTAT NET" in label or "RESULTAT NET" in label:
+        return "company_details"
     if "FINISH" in label or not label:
         return "FINISH"
     return None
@@ -203,7 +207,7 @@ def _build_supervisor_node(model: str):
             }
         if structured_data and "[NLU]" in str(last_content):
             suggested = (structured_data.get("suggested_worker") or "").strip().lower()
-            if suggested in ("scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction", "sgi"):
+            if suggested in ("scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction", "sgi", "company_details"):
                 return {
                     "messages": messages,
                     "next": suggested,
@@ -336,7 +340,7 @@ def route_after_nlu(state: AgentState) -> Literal["supervisor", "__end__"]:
 
 def route_after_supervisor(
     state: AgentState,
-) -> Literal["scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction", "sgi", "multi_worker", "__end__"]:
+) -> Literal["scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction", "sgi", "company_details", "multi_worker", "__end__"]:
     multi = state.get("multi_workers") or []
     if multi:
         return "multi_worker"
@@ -357,6 +361,8 @@ def route_after_supervisor(
         return "portfolio"
     if next_ == "sgi":
         return "sgi"
+    if next_ == "company_details":
+        return "company_details"
     return "__end__"
 
 
@@ -380,7 +386,7 @@ def _build_multi_worker_node(
 
         messages = list(state.get("messages") or [])
         image_path = state.get("image_path")
-        valid = {"scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction", "sgi"}
+        valid = {"scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction", "sgi", "company_details"}
         workers = [w for w in workers if w in valid and w in worker_nodes]
 
         # region agent log
@@ -464,6 +470,7 @@ def create_master_graph(model: str | None = None, checkpointer: Any | None = Non
     portfolio_n = _build_worker_node(create_portfolio_agent, model, worker_name="portfolio", prepend_system=_portfolio_system)
     prediction_n = _build_worker_node(create_prediction_agent, model, worker_name="prediction", prepend_system=get_prediction_agent_system)
     sgi_n = _build_worker_node(create_sgi_agent, model, worker_name="sgi", prepend_system=get_sgi_agent_system)
+    company_details_n = _build_worker_node(create_company_details_agent, model, worker_name="company_details", prepend_system=get_company_details_agent_system)
 
     builder.add_node("scraper", scraper_n)
     builder.add_node("analytics", analytics_n)
@@ -473,6 +480,7 @@ def create_master_graph(model: str | None = None, checkpointer: Any | None = Non
     builder.add_node("portfolio", portfolio_n)
     builder.add_node("prediction", prediction_n)
     builder.add_node("sgi", sgi_n)
+    builder.add_node("company_details", company_details_n)
 
     worker_nodes_map["scraper"] = scraper_n
     worker_nodes_map["analytics"] = analytics_n
@@ -482,6 +490,7 @@ def create_master_graph(model: str | None = None, checkpointer: Any | None = Non
     worker_nodes_map["portfolio"] = portfolio_n
     worker_nodes_map["prediction"] = prediction_n
     worker_nodes_map["sgi"] = sgi_n
+    worker_nodes_map["company_details"] = company_details_n
 
     builder.add_node("multi_worker", _build_multi_worker_node(worker_nodes_map, model))
 
@@ -496,6 +505,7 @@ def create_master_graph(model: str | None = None, checkpointer: Any | None = Non
     builder.add_edge("portfolio", "supervisor")
     builder.add_edge("prediction", "supervisor")
     builder.add_edge("sgi", "supervisor")
+    builder.add_edge("company_details", "supervisor")
     builder.add_edge("multi_worker", "supervisor")
 
     cp = checkpointer if checkpointer is not None else MemorySaver()

@@ -8,6 +8,10 @@ from langchain_core.tools import StructuredTool  # pyright: ignore[reportMissing
 
 from app.scrapers import BRVMScraper, RichBourseScraper, RichBourseTimeseriesScraper, SikaFinanceScraper
 from app.scrapers.sgi_brvm import fetch_and_save_sgi, load_sgi_local, SGI_JSON_PATH
+from app.scrapers.sikafinance_company import (
+    fetch_and_save_company_details,
+    load_company_details,
+)
 from app.utils import compare_stocks, compute_metrics, get_stock_metrics, get_timeseries
 from app.utils._data import (
     ensure_timeseries_up_to_date,
@@ -22,7 +26,12 @@ from app.utils.news import (
 from app.utils.plots import plot_timeseries as plot_timeseries_service
 from app.utils.market_overview import get_brvm_market_overview
 from app.utils.brvm_basics import get_brvm_basics
-from app.utils.brvm_companies import get_symbol_to_name, get_symbol_to_sector, get_valid_symbols
+from app.utils.brvm_companies import (
+    get_country_code_for_symbol,
+    get_symbol_to_name,
+    get_symbol_to_sector,
+    get_valid_symbols,
+)
 
 import config
 from .schemas import (
@@ -47,6 +56,8 @@ from .schemas import (
     GetSgiDataInput,
     FetchSgiDataInput,
     FetchSgiUrlInput,
+    GetCompanyDetailsInput,
+    FetchCompanyDetailsInput,
 )
 
 SLEEP = config.SLEEP_SECONDS
@@ -202,6 +213,47 @@ def _fetch_sgi_url(url: str, **kwargs: Any) -> str:
         }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"url": url, "error": str(e)}, ensure_ascii=False)
+
+
+def _get_company_details(symbol: str, **kwargs: Any) -> str:
+    """Read cached company profile for one BRVM symbol (presentation, shareholders, performance).
+
+    Loads from app/data/company_details/{SYMBOL}.json. Returns JSON with company_name, code,
+    presentation, phone, address, dirigeants, nombre_titres, flottant, valorisation,
+    shareholders (list of {name, pct}), and performance (metrics by year: chiffre_affaires,
+    resultat_net, croissance_ca, croissance_rn, bnpa, per, dividende).
+
+    Returns error "no_local_data" when the file does not exist; the caller should then
+    use fetch_company_details(symbol) and call get_company_details again.
+    """
+    sym = (symbol or "").strip().upper()
+    if sym not in get_valid_symbols():
+        return json.dumps({"error": f"Symbole inconnu : {symbol}. Utilisez un symbole BRVM valide."}, ensure_ascii=False)
+    data = load_company_details(sym)
+    if not data:
+        return json.dumps({
+            "error": "no_local_data",
+            "message": "Aucune fiche société locale. Utilisez fetch_company_details pour télécharger depuis Sika Finance (enregistré dans app/data/company_details).",
+        }, ensure_ascii=False)
+    return json.dumps(data, ensure_ascii=False, default=str)
+
+
+def _fetch_company_details(symbol: str, **kwargs: Any) -> str:
+    """Fetch company fiche société from Sika Finance and save to local cache.
+
+    Downloads the Sika Finance page for the given BRVM symbol (e.g. BOAM.ml, NTLC.ci),
+    parses presentation, management, shareholders, and performance table, then saves
+    to app/data/company_details/{SYMBOL}.json. Country code is derived from BRVM data.
+    Call this when get_company_details returns no_local_data or when the user asks
+    to refresh company details. Returns the same structure as get_company_details
+    (or an error dict if the fetch failed).
+    """
+    sym = (symbol or "").strip().upper()
+    if sym not in get_valid_symbols():
+        return json.dumps({"error": f"Symbole inconnu : {symbol}. Utilisez un symbole BRVM valide."}, ensure_ascii=False)
+    country_code = get_country_code_for_symbol(sym)
+    result = fetch_and_save_company_details(sym, country_code)
+    return json.dumps(result, ensure_ascii=False, default=str)
 
 
 def _get_company_info(symbol: str, **kwargs: Any) -> str:
@@ -387,4 +439,18 @@ fetch_sgi_url_tool = StructuredTool.from_function(
     name="fetch_sgi_url",
     description="Fetch content from a URL (e.g. SGI detail_url, tarifs_url, documents_url, or website). Use when user needs details from a specific SGI link.",
     args_schema=FetchSgiUrlInput,
+)
+
+get_company_details_tool = StructuredTool.from_function(
+    func=_get_company_details,
+    name="get_company_details",
+    description="Read cached BRVM company profile for one symbol: presentation, dirigeants, shareholders, performance (CA, résultat net, dividendes, croissance, BNPA, PER). Call this first. If it returns no_local_data, call fetch_company_details(symbol) then get_company_details(symbol) again.",
+    args_schema=GetCompanyDetailsInput,
+)
+
+fetch_company_details_tool = StructuredTool.from_function(
+    func=_fetch_company_details,
+    name="fetch_company_details",
+    description="Download company fiche société from Sika Finance for one BRVM symbol and save to app/data/company_details. Use when get_company_details returned no_local_data or when the user asks to refresh/update company data.",
+    args_schema=FetchCompanyDetailsInput,
 )

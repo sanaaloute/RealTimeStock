@@ -3,7 +3,7 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.messages import BaseMessage
 
-WorkerName = Literal["scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction", "sgi"]
+WorkerName = Literal["scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction", "sgi", "company_details"]
 NextWorker = WorkerName | Literal["FINISH"]
 
 

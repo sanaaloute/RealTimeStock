@@ -32,9 +32,9 @@ Unknown symbol or other exchange → CLARIFY.
 
 **General market questions (NO symbol required):** For "most expensive stock", "highest price stock", "lowest price stock", "cheapest stock", "what is the cheapest?", "should I buy the lowest price stock?" — use intent **market_overview**, suggested_worker **analytics**, and leave entities empty or omit symbol. Do NOT ask for a symbol; the analytics worker will compute from all BRVM stocks.
 
-**Intents (exact):** market_overview | price_query | compare | chart | metrics | news | prediction | scrape | update_timeseries | brvm_basics | portfolio_display | portfolio_add | portfolio_remove | tracking_list | tracking_add | target_set | target_list | sgi | general
+**Intents (exact):** market_overview | price_query | compare | chart | metrics | news | prediction | scrape | update_timeseries | brvm_basics | portfolio_display | portfolio_add | portfolio_remove | tracking_list | tracking_add | target_set | target_list | sgi | company_details | general
 
-**Worker:** analytics (prices, compare, stats, overview) | charts (plot) | timeseries (CSV) | scraper (raw fetch) | news | prediction (trends, hausse/baisse/neutre, technical prediction for a stock) | portfolio | sgi (courtiers BRVM, liste SGI, où ouvrir un compte, tarifs courtiers)
+**Worker:** analytics (prices, compare, stats, overview) | charts (plot) | timeseries (CSV) | scraper (raw fetch) | news | prediction (trends, hausse/baisse/neutre, technical prediction for a stock) | portfolio | sgi (courtiers BRVM, liste SGI, où ouvrir un compte, tarifs courtiers) | company_details (fiche société: actionnaires, dividende, résultat net, croissance, BNPA, PER, présentation, dirigeants)
 
 **Output:**
 A) Unclear → CLARIFY: <short question>

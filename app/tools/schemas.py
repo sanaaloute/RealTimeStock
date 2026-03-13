@@ -214,3 +214,16 @@ class FetchSgiDataInput(BaseModel):
 
 class FetchSgiUrlInput(BaseModel):
     url: str = Field(description="Full URL to fetch (e.g. SGI detail_url, tarifs_url, website).")
+
+
+# Company details (Sika Finance société page: presentation, shareholders, performance)
+class GetCompanyDetailsInput(BaseModel):
+    symbol: str = Field(
+        description="Single BRVM symbol (e.g. BOAM, NTLC, SLBC). Required. Use for any question about this company's profile, actionnaires, dividends, net result, growth, or performance table.",
+    )
+
+
+class FetchCompanyDetailsInput(BaseModel):
+    symbol: str = Field(
+        description="BRVM symbol to fetch from Sika Finance and save to cache (e.g. BOAM, NTLC). Call only when get_company_details returned no_local_data or the user explicitly asks to refresh company details.",
+    )
