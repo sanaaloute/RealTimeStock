@@ -7,8 +7,8 @@ import time
 import httpx
 
 import config
-from bot import build_application
-from services._data import run_daily_timeseries_update
+from app.bot import build_application
+from app.utils._data import run_daily_timeseries_update
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,22 +22,22 @@ TARGET_CHECK_INTERVAL_SEC = 300  # 5 minutes
 
 
 def _daily_timeseries_job() -> None:
-    """Run once per day: update CSVs for all configured symbols."""
+    """Update CSVs for all configured symbols: once at startup, then every 24h."""
     while True:
-        time.sleep(DAILY_INTERVAL_SEC)
         try:
-            logger.info("Daily timeseries update: %s", config.TIMESERIES_SYMBOLS)
+            logger.info("Timeseries update: %s", config.TIMESERIES_SYMBOLS)
             results = run_daily_timeseries_update(config.TIMESERIES_SYMBOLS)
             for r in results:
                 logger.info("Timeseries %s: %s", r.get("symbol"), r.get("action", r))
         except Exception as e:
             logger.exception("Daily timeseries update failed: %s", e)
+        time.sleep(DAILY_INTERVAL_SEC)
 
 
 async def _check_target_alerts(context) -> None:
     """Job: check price targets and send Telegram notifications to users whose target was reached."""
     try:
-        from services.user_db import check_targets_and_notify
+        from app.utils.user_db import check_targets_and_notify
         allowed = set(config.ALLOWED_TELEGRAM_IDS or [])
         for telegram_id, text in check_targets_and_notify():
             if telegram_id not in allowed:

@@ -7,7 +7,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - bot_data:/app/data
+      - bot_data:/app/app/data
     restart: unless-stopped
 
   bot:
@@ -16,10 +16,8 @@ services:
     env_file: .env
     environment:
       - BRVM_API_URL=http://api:8000
-      - HTTP_PROXY=http://host.docker.internal:29758
-      - HTTPS_PROXY=http://host.docker.internal:29758
     volumes:
-      - bot_data:/app/data
+      - bot_data:/app/app/data
     depends_on:
       - api
     restart: unless-stopped

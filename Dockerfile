@@ -11,15 +11,11 @@ RUN pip install --upgrade pip \
 
 # App and data
 COPY config.py .
-COPY run_agent.py run_telegram_bot.py ./
-COPY agents agents/
-COPY bot bot/
-COPY data data/
-COPY scrapers scrapers/
-COPY services services/
+COPY run_agent.py run_api.py run_telegram_bot.py run_scrapers.py ./
+COPY app app/
 
 # Persisted at runtime via volume; ensure dir exists
-RUN mkdir -p /app/data/series
+RUN mkdir -p /app/app/data/series
 
 # Optional: install ffmpeg for voice OGG→WAV (uncomment if you need voice messages in Telegram)
 # RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*

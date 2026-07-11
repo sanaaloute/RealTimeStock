@@ -14,7 +14,7 @@ import sys
 from typing import Any
 
 import config
-from scrapers import SikaFinanceScraper, RichBourseScraper, RichBourseTimeseriesScraper, BRVMScraper
+from app.scrapers import SikaFinanceScraper, RichBourseScraper, RichBourseTimeseriesScraper, BRVMScraper
 
 logging.basicConfig(
     level=logging.INFO,
@@ -128,7 +128,6 @@ def _to_json_safe(obj: Any) -> Any:
 
 def _summary(data: dict, site: str) -> str:
     """Custom summary per site."""
-    print("DATA", data)
     if site == "sikafinance":
         n = len(data.get("brvm_stocks") or [])
         period = data.get("period", "veille")

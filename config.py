@@ -16,6 +16,36 @@ BRVM_URL = "https://www.brvm.org/"
 BRVM_ANNOUNCEMENTS_URL = "https://www.brvm.org/fr/emetteurs/type-annonces/convocations-assemblees-generales"
 
 BRVM_API_URL = os.getenv("BRVM_API_URL", "http://localhost:8000").rstrip("/")
+
+# Market data cache: palmarès page is scraped at most once per TTL (stale snapshot
+# is served if a refresh fails). Default 300s = 5 minutes.
+PALMARES_CACHE_TTL_SECONDS = float(os.getenv("PALMARES_CACHE_TTL_SECONDS", "300"))
+
+# Chat API: cap concurrent agent runs; extra requests wait up to AGENT_QUEUE_TIMEOUT
+# then get a friendly "busy" reply instead of melting the LLM backend.
+MAX_CONCURRENT_AGENTS = int(os.getenv("MAX_CONCURRENT_AGENTS", "4"))
+AGENT_QUEUE_TIMEOUT = float(os.getenv("AGENT_QUEUE_TIMEOUT", "60"))
+
+# Security: shared secret the bot sends as X-API-Key to call the Chat API.
+# Empty = dev mode (no auth, warning logged). MUST be set in production.
+API_SECRET_KEY = os.getenv("API_SECRET_KEY", "").strip()
+
+# Coarse per-user rate limit on /chat (requests per minute). 0 = disabled.
+RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
+
+# Free daily quota on /chat (requests per user per UTC day). 0 = unlimited.
+# Failed requests are refunded; rate-limited/busy rejections never count.
+DAILY_FREE_QUOTA = int(os.getenv("DAILY_FREE_QUOTA", "30"))
+# Comma-separated user ids exempt from the daily quota (owner/testers).
+# Accepts raw Telegram ids or channel keys like "wa:22507000000".
+QUOTA_EXEMPT_IDS = {s.strip() for s in os.getenv("QUOTA_EXEMPT_IDS", "").split(",") if s.strip()}
+
+# WhatsApp Business Cloud API channel. All three required to enable; the webhook
+# (GET/POST /whatsapp/webhook) must be reachable over public HTTPS from Meta.
+WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "").strip()
+WHATSAPP_ACCESS_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN", "").strip()
+WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+WHATSAPP_ENABLED = bool(WHATSAPP_VERIFY_TOKEN and WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 ALLOWED_TELEGRAM_IDS: list[int] = []
 _raw = os.getenv("ALLOWED_TELEGRAM_IDS", "").strip()
