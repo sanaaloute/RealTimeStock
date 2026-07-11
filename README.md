@@ -70,7 +70,7 @@ RealTimeStock/
    For the Telegram bot:
 
    - `TELEGRAM_BOT_TOKEN` — from [@BotFather](https://t.me/BotFather)
-   - `ALLOWED_TELEGRAM_IDS` — your Telegram user ID (e.g. from [@userinfobot](https://t.me/userinfobot))
+   - `API_SECRET_KEY` — shared secret the bot sends to the Chat API (generate: `python -c "import secrets; print(secrets.token_urlsafe(32))"`)
 
 3. **Run**
 
@@ -137,7 +137,7 @@ RealTimeStock/
 
    ```bash
    cp .env.example .env
-   # Set TELEGRAM_BOT_TOKEN, ALLOWED_TELEGRAM_IDS, API_SECRET_KEY, POSTGRES_PASSWORD
+   # Set TELEGRAM_BOT_TOKEN, API_SECRET_KEY, POSTGRES_PASSWORD
    docker compose build
    docker compose up -d
    ```
