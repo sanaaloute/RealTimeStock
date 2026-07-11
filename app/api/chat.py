@@ -94,7 +94,10 @@ def _get_checkpointer():
 
                     # psycopg3 connections are thread-safe; checkpoint ops just
                     # serialize behind the connection lock (fine at our scale).
-                    conn = psycopg.connect(config.DATABASE_URL)
+                    # autocommit=True is required: setup() migrations include
+                    # CREATE INDEX CONCURRENTLY, which can't run inside the
+                    # implicit transaction psycopg opens by default.
+                    conn = psycopg.connect(config.DATABASE_URL, autocommit=True)
                     saver = PostgresSaver(conn)
                     saver.setup()  # creates checkpoint tables if missing
                     _checkpointer = saver

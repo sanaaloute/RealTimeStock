@@ -50,7 +50,9 @@ def main() -> int:
         import psycopg
         from langgraph.checkpoint.postgres import PostgresSaver
 
-        with psycopg.connect(DATABASE_URL) as conn:
+        # autocommit=True: setup() migrations use CREATE INDEX CONCURRENTLY,
+        # which cannot run inside a transaction block.
+        with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
             PostgresSaver(conn).setup()
         print("Created checkpoint tables in PostgreSQL:", DATABASE_URL.split("@")[-1])
         return 0
