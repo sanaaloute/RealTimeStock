@@ -28,8 +28,12 @@ RealTimeStock/
 │   │   └── whatsapp.py   # WhatsApp Business Cloud API webhook (same pipeline)
 │   ├── models/           # LLM providers: ollama | groq | openrouter
 │   ├── bot/              # Telegram bot (client of the Chat API)
+│   ├── channels/
+│   │   └── whatsapp/     # WhatsApp via Evolution API (webhook, client, service)
 │   ├── data/             # BRVM_Companies.xlsx, company_details/, series/ (runtime CSVs)
 │   ├── scrapers/         # Rich Bourse, Sika Finance, BRVM.org (+ dividends, trends, SGI)
+│   ├── services/
+│   │   └── chat_service.py  # Channel-agnostic entry to the AI pipeline
 │   ├── tools/            # LangChain tools + pydantic schemas
 │   └── utils/            # Services (metrics, news, plots, cache, user_db, ...)
 ├── config.py
@@ -102,6 +106,35 @@ RealTimeStock/
 
    WhatsApp users share the Telegram pipeline: same agent, same free daily quota (metered as `wa:<phone>`), same per-user memory. Text in, text out; charts are sent as images. Voice/images on WhatsApp and portfolio/tracking/alerts on WhatsApp are not supported yet.
 
+   **WhatsApp channel via Evolution API** (self-hosted alternative to the Meta Cloud API — same pipeline, no extra process):
+
+   1. Set `EVOLUTION_API_KEY` (a secret you choose — generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`) and `EVOLUTION_INSTANCE` (e.g. `brvm-bot`) in `.env`. The `docker-compose.yml` stack already includes the `evolution` service (its API on port `8080`); for non-Docker runs also set `EVOLUTION_URL` (default inside compose: `http://evolution:8080`).
+   2. Create the instance and pair your WhatsApp number (scan the QR with the phone app, like WhatsApp Web). Do NOT set a per-instance token, so webhook deliveries are signed with the global key:
+      ```bash
+      curl -X POST http://localhost:8080/instance/create \
+        -H "apikey: $EVOLUTION_API_KEY" -H "Content-Type: application/json" \
+        -d '{"instanceName": "brvm-bot", "integration": "WHATSAPP-BAILEYS", "qrcode": true}'
+      # fetch the QR as base64 and open it in a browser:
+      curl http://localhost:8080/instance/connect/brvm-bot -H "apikey: $EVOLUTION_API_KEY"
+      ```
+      (Or use the Manager UI at `http://localhost:8080/manager` — log in with your `EVOLUTION_API_KEY`.)
+   3. Point the instance webhook at the api service (inside the compose network), with base64 enabled so voice notes arrive inline:
+      ```bash
+      curl -X POST http://localhost:8080/webhook/set/brvm-bot \
+        -H "apikey: $EVOLUTION_API_KEY" -H "Content-Type: application/json" \
+        -d '{"webhook": {"enabled": true, "url": "http://api:8000/whatsapp/evolution/webhook", "webhookByEvents": false, "webhookBase64": true, "events": ["MESSAGES_UPSERT"]}}'
+      ```
+
+   Text and voice notes (transcribed like Telegram) are supported; charts are sent as images. Users are metered as `wa:<phone>` with per-user conversation memory, identical to the Meta channel.
+
+   **EC2 / production notes** (Evolution channel):
+
+   - Unlike the Meta Cloud API, **no public HTTPS endpoint is needed**: Evolution connects *outbound* to WhatsApp, and the webhook travels `evolution → api` inside the compose network. The EC2 security group only needs SSH (port 22).
+   - Evolution's port `8080` is bound to `127.0.0.1` in the compose file. For the one-time admin steps (QR pairing, webhook setup), open an SSH tunnel from your machine and run the curls against it:
+     `ssh -L 8080:localhost:8080 ec2-user@<ec2-ip>` (or the Session Manager port-forwarding equivalent).
+   - Use an **x86_64 (amd64)** instance type — the Playwright base image is amd64-oriented (Graviton/arm64 is untested). Size: `t3.medium` (4 GB) minimum without Ollama, larger if you run a local model.
+   - The api port `8000` is published as before; keep the security group closed on it unless you also use the Meta webhook or external health checks (the Evolution channel does not need it).
+
 4. **Tuning (optional, see `.env.example`)**
 
    - `PALMARES_CACHE_TTL_SECONDS` (default `300`) — market data (palmarès) is scraped at most once per TTL and cached in memory + on disk (`app/data/palmares_cache.json`); if a refresh fails, the last good snapshot is served so the bot keeps answering during source outages.
@@ -126,6 +159,7 @@ RealTimeStock/
    python tests/test_api_security.py        # security: API key + rate limit (needs full deps)
    python tests/test_daily_quota.py         # free daily quota: limits, refunds, rollover (needs full deps)
    python tests/test_whatsapp_webhook.py    # WhatsApp channel: webhook, dedup, chunking (needs full deps)
+   python tests/test_whatsapp_evolution.py  # WhatsApp via Evolution API: webhook, auth, audio (needs full deps)
    python tests/test_graph_e2e.py           # full graph with fake LLM (needs full deps)
    python tests/test_postgres_backend.py    # SQL translation always; full PG run when TEST_DATABASE_URL is set
    ```
@@ -142,9 +176,20 @@ RealTimeStock/
    docker compose up -d
    ```
 
-   Services: `db` (PostgreSQL 16, data in the `postgres_data` volume), `api`, `bot`
-   (both wait for the db healthcheck). To run on SQLite instead, remove
-   `DATABASE_URL` from the compose services — the `bot_data` volume then holds the .db files.
+   Services: `db` (PostgreSQL 16, data in the `postgres_data` volume), `api` (with
+   a `/health` healthcheck), `bot` (waits for the api + db healthchecks), `evolution`
+   (self-hosted WhatsApp gateway on port 8080 — see the Evolution section above for
+   the one-time QR pairing + webhook setup; if you don't use WhatsApp, comment out
+   the `evolution` service AND its `depends_on` entry under `api`). The LLM runs on
+   Ollama Cloud by default — no local Ollama container is started; for a local model
+   instead: `docker compose --profile local-llm up -d ollama`. To run on SQLite,
+   remove `DATABASE_URL` from the compose services — the `bot_data` volume then
+   holds the .db files.
+
+   Note: the `evolution` Postgres database is created by `docker/init-db.sql`, which
+   runs only on the **first** initialization of the `postgres_data` volume. On an
+   already-initialized volume, create it once manually:
+   `docker compose exec db psql -U brvm -d brvm -c "CREATE DATABASE evolution;"`
 
    On startup each container auto-bootstraps the SGI (broker) list into the shared
    `bot_data` volume (no manual `run_sgi_fetch.py` step) and refreshes it when older

@@ -211,9 +211,11 @@ def increment_daily_usage(user_id: str) -> int:
     try:
         today = _today_utc()
         row = conn.execute(
+            # Table-qualified `usage_daily.count`: bare `count` is ambiguous in
+            # Postgres upserts (table vs EXCLUDED); SQLite accepts both forms.
             _sql("""
             INSERT INTO usage_daily (user_id, day, count) VALUES (?, ?, 1)
-            ON CONFLICT(user_id, day) DO UPDATE SET count = count + 1
+            ON CONFLICT(user_id, day) DO UPDATE SET count = usage_daily.count + 1
             RETURNING count
             """),
             (str(user_id), today),

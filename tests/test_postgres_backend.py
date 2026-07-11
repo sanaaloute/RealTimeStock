@@ -20,6 +20,8 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import config  # noqa: E402
+config.DATABASE_URL = ""  # always-run tests use SQLite regardless of local .env
+
 import app.utils.user_db as user_db  # noqa: E402
 
 RESULTS = []
@@ -52,6 +54,30 @@ def test_sql_translation():
         assert user_db._sql("a = ?") == "a = ?"  # untouched on sqlite
     finally:
         user_db.BACKEND = saved
+
+
+def test_usage_counter_sqlite():
+    """Always runs: quota counter round-trip on SQLite.
+
+    Regression guard for the upsert in increment_daily_usage: the DO UPDATE
+    clause must use the table-qualified form (`usage_daily.count + 1`) — bare
+    `count` is ambiguous on Postgres. This verifies the shared SQL stays
+    valid on SQLite; the integration test covers the Postgres side.
+    """
+    assert user_db.BACKEND == "sqlite", user_db.BACKEND
+    saved_path = user_db.DB_PATH
+    user_db.DB_PATH = Path(tempfile.mkdtemp()) / "counter_test.db"
+    try:
+        assert user_db.get_daily_usage("counter-user") == 0
+        assert user_db.increment_daily_usage("counter-user") == 1
+        assert user_db.increment_daily_usage("counter-user") == 2
+        user_db.decrement_daily_usage("counter-user")
+        assert user_db.get_daily_usage("counter-user") == 1
+        user_db.decrement_daily_usage("counter-user")
+        user_db.decrement_daily_usage("counter-user")  # floor at 0
+        assert user_db.get_daily_usage("counter-user") == 0
+    finally:
+        user_db.DB_PATH = saved_path
 
 
 def _pg_user_db_flow():
@@ -138,6 +164,7 @@ def test_postgres_integration():
 
 if __name__ == "__main__":
     check("test_sql_translation", test_sql_translation)
+    check("test_usage_counter_sqlite", test_usage_counter_sqlite)
     check("test_postgres_integration", test_postgres_integration)
     passed = sum(1 for _, ok, _ in RESULTS if ok)
     total = len(RESULTS)

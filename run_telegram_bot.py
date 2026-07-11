@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 DAILY_INTERVAL_SEC = 24 * 3600
 TARGET_CHECK_INTERVAL_SEC = 300  # 5 minutes
+# The API container can take ~15-30s to boot (font cache, model warmup). Wait
+# for it instead of crashing and relying on the restart loop.
+API_STARTUP_RETRIES = 20
+API_STARTUP_RETRY_DELAY = 3  # seconds
 
 
 def _daily_timeseries_job() -> None:
@@ -62,27 +66,32 @@ def main() -> int:
     client_kwargs = {"timeout": 5.0}
     if "localhost" in api_url.lower() or "127.0.0.1" in api_url:
         client_kwargs["trust_env"] = False
-    try:
-        with httpx.Client(**client_kwargs) as client:
-            r = client.get(health_url)
-            if r.status_code != 200:
-                logger.error(
-                    "Chat API at %s returned %s. Start the API first: python main.py or python run_api.py",
-                    api_url,
-                    r.status_code,
-                )
-                return 1
-    except httpx.ConnectError as e:
+    last_err: str | None = "not attempted"
+    for attempt in range(1, API_STARTUP_RETRIES + 1):
+        try:
+            with httpx.Client(**client_kwargs) as client:
+                r = client.get(health_url)
+            if r.status_code == 200:
+                last_err = None
+                break
+            last_err = f"HTTP {r.status_code}"
+        except Exception as e:
+            last_err = str(e)
+        if attempt < API_STARTUP_RETRIES:
+            logger.warning(
+                "Chat API not ready at %s (%s) - retry %s/%s in %ss",
+                api_url, last_err, attempt, API_STARTUP_RETRIES, API_STARTUP_RETRY_DELAY,
+            )
+            time.sleep(API_STARTUP_RETRY_DELAY)
+    if last_err is not None:
         logger.error(
-            "Cannot reach Chat API at %s. Is it running? Start it with: python main.py or python run_api.py\n"
+            "Cannot reach Chat API at %s after %s attempts. Is it running? Start it with: python main.py or python run_api.py\n"
             "If bot and API run on different machines, set BRVM_API_URL in .env to the API URL (e.g. http://your-server:8000).\n"
-            "Error: %s",
+            "Last error: %s",
             api_url,
-            e,
+            API_STARTUP_RETRIES,
+            last_err,
         )
-        return 1
-    except Exception as e:
-        logger.error("Chat API health check failed: %s", e)
         return 1
 
     thread = threading.Thread(target=_daily_timeseries_job, daemon=True)

@@ -1,4 +1,6 @@
 # `docker compose up -d` starts the full stack: PostgreSQL + Chat API + Telegram bot
+# + Evolution API (self-hosted WhatsApp gateway). The LLM runs on Ollama Cloud
+# (OLLAMA_CLOUD=true) — no local Ollama container is started by default.
 # (+ SGI broker data auto-bootstrapped into the shared volume by the image
 # entrypoint — no manual `python run_sgi_fetch.py` step; refreshed when older than
 # 7 days, tunable via SGI_REFRESH_DAYS).
@@ -15,6 +17,8 @@ services:
       POSTGRES_DB: brvm
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Creates the extra `evolution` database on FIRST init of the volume only.
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/00-init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U brvm -d brvm"]
       interval: 5s
@@ -29,13 +33,23 @@ services:
     env_file: .env
     environment:
       - DATABASE_URL=postgresql://brvm:${POSTGRES_PASSWORD:-brvm}@db:5432/brvm
+      # Inside the compose network the bot reaches Evolution by service name.
+      - EVOLUTION_URL=http://evolution:8080
     ports:
       - "8000:8000"
     volumes:
       - bot_data:/app/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     depends_on:
       db:
         condition: service_healthy
+      evolution:
+        condition: service_started
     restart: unless-stopped
 
   bot:
@@ -49,15 +63,52 @@ services:
       - bot_data:/app/app/data
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
       db:
         condition: service_healthy
     restart: unless-stopped
 
-  # Optional: run Ollama in Docker. Start with: docker compose up -d ollama
-  # Then: docker compose exec ollama ollama pull glm-5:cloud
-  # In .env set: OLLAMA_BASE_URL=http://ollama:11434
+  # Evolution API: self-hosted WhatsApp gateway (Baileys). Pair a WhatsApp
+  # number via QR code, then point its webhook at the api service:
+  #   http://api:8000/whatsapp/evolution/webhook  (event MESSAGES_UPSERT, base64 on)
+  # AUTHENTICATION_API_KEY is YOUR chosen secret — set EVOLUTION_API_KEY in .env.
+  evolution:
+    image: atendai/evolution-api:v2.2.3
+    environment:
+      - SERVER_PORT=8080
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-change-me}
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://brvm:${POSTGRES_PASSWORD:-brvm}@db:5432/evolution
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
+      - DATABASE_SAVE_DATA_CONTACTS=false
+      - DATABASE_SAVE_DATA_CHATS=false
+      - CACHE_REDIS_ENABLED=false
+      - CACHE_LOCAL_ENABLED=true
+      - LOG_LEVEL=ERROR,WARN,INFO
+      - DEL_INSTANCE=false
+    # Bound to localhost only: the bot reaches Evolution over the compose network
+    # (http://evolution:8080), and admin access (QR pairing, webhook setup) goes
+    # through an SSH tunnel — never expose this port in the EC2 security group.
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - evolution_data:/evolution/instances
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Optional: run Ollama LOCALLY (profile-gated: NOT started by `docker compose
+  # up -d`; the default stack uses Ollama Cloud). To use it instead:
+  #   docker compose --profile local-llm up -d ollama
+  #   docker compose exec ollama ollama pull llama3.2:3b
+  #   .env: remove OLLAMA_CLOUD and set OLLAMA_BASE_URL=http://ollama:11434
   ollama:
+    profiles: ["local-llm"]
     image: ollama/ollama:latest
     ports:
       - "11434:11434"
@@ -77,3 +128,4 @@ volumes:
   bot_data:
   postgres_data:
   ollama_data:
+  evolution_data:
