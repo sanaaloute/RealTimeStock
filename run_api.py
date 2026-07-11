@@ -1,4 +1,4 @@
-"""Run BRVM Chat API (uvicorn on port 8000)."""
+"""Run BRVM Chat API only (no Telegram bot). For API + bot together, use: python main.py"""
 import logging
 import sys
 
@@ -16,6 +16,5 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=False,
-        log_level="info",
     )
     sys.exit(0)

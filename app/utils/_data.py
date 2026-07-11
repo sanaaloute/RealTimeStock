@@ -132,12 +132,19 @@ def get_series_status(symbol: str) -> dict[str, Any]:
     if not p or not p.exists():
         return out
     out["path"] = str(p)
+    cutoff = date.today() - timedelta(days=MAX_AGE_DAYS)
     try:
         parts = p.stem.split("_")
         if len(parts) >= 3:
             out["last_date"] = parts[-1][:10]
-            last = date.fromisoformat(out["last_date"])
-            out["up_to_date"] = last >= (date.today() - timedelta(days=MAX_AGE_DAYS))
+            last_data_date = date.fromisoformat(out["last_date"])
+            # Up-to-date if data extends to recent OR the file was refreshed
+            # recently (avoids re-scraping every run).
+            try:
+                mtime = datetime.fromtimestamp(p.stat().st_mtime).date()
+            except OSError:
+                mtime = date.min
+            out["up_to_date"] = last_data_date >= cutoff or mtime >= cutoff
     except ValueError:
         pass
     return out
@@ -157,7 +164,7 @@ def ensure_series_csv(symbol: str) -> Path | None:
 def ensure_timeseries_up_to_date(symbol: str) -> dict[str, Any]:
     status = get_series_status(symbol)
     if status["up_to_date"] and status["path"]:
-        return {"symbol": symbol, "action": "skipped", "path": status["path"], "message": "Already up to date."}
+        return {"symbol": symbol, "action": "skipped", "path": status["path"], "message": "Déjà à jour."}
     scraper = RichBourseTimeseriesScraper(symbol=symbol, output_dir=DATA_SERIES_DIR)
     result = scraper.scrape()
     if result.get("error"):
@@ -217,7 +224,8 @@ def load_series(
     fetch_if_missing: bool = True,
 ) -> list[dict[str, Any]]:
     if fetch_if_missing:
-        ensure_series_csv(symbol)
+        # Ensure CSV exists and is up-to-date before reading (scrape & save if stale)
+        ensure_timeseries_up_to_date(symbol)
     p = _find_series_csv(symbol)
     if not p or not p.exists():
         return []

@@ -2,66 +2,44 @@
 
 ## Project objective
 
-Scrape and query BRVM (Bourse Régionale des Valeurs Mobilières) / West African stock data. A LangGraph agent coordinates scrapers (Sika Finance, Rich Bourse, BRVM) and analytics workers to answer natural-language questions via CLI or Telegram. Supports portfolio tracking and price alerts.
+Scrape and query BRVM (Bourse Régionale des Valeurs Mobilières) / West African stock data. A LangGraph agent (NLU → supervisor → 9 workers) coordinates scrapers (Sika Finance, Rich Bourse, BRVM) and analytics workers to answer natural-language questions via CLI, Telegram, or WhatsApp. Supports portfolio tracking, price alerts, predictions/trends, SGI (broker) info and company fiches.
 
 ## Project tree
 
 ```
 RealTimeStock/
 ├── app/
-│   ├── agents/           # LangGraph agents (flattened: NLU, scraper, analytics, charts, news, portfolio)
-│   │   ├── analytics_agent.py
-│   │   ├── charts_agent.py
-│   │   ├── graph.py
-│   │   ├── llm.py
-│   │   ├── news_agent.py
+│   ├── agents/           # LangGraph: NLU, supervisor, 9 workers, state
+│   │   ├── graph.py             # master graph (cached compile, multi-worker routing)
 │   │   ├── nlu_agent.py
-│   │   ├── portfolio_agent.py
 │   │   ├── scraper_agent.py
-│   │   ├── state.py
+│   │   ├── analytics_agent.py
 │   │   ├── timeseries_agent.py
+│   │   ├── charts_agent.py
+│   │   ├── news_agent.py
+│   │   ├── portfolio_agent.py
+│   │   ├── prediction_agent.py
+│   │   ├── sgi_agent.py
+│   │   ├── company_details_agent.py
+│   │   ├── state.py
 │   │   └── utils.py
 │   ├── api/
-│   │   ├── chat.py       # FastAPI: bot → API → agents (hides internal errors)
+│   │   ├── chat.py       # FastAPI: bot → API → agents (auth, quota, rate limit, sanitized errors)
 │   │   └── whatsapp.py   # WhatsApp Business Cloud API webhook (same pipeline)
-│   ├── bot/
-│   │   ├── help.py
-│   │   ├── redact.py
-│   │   ├── telegram_bot.py
-│   │   └── voice_to_text.py
-│   ├── data/
-│   │   ├── brvm_companies.txt
-│   │   └── series/
-│   ├── scrapers/
-│   │   ├── base.py
-│   │   ├── brvm.py
-│   │   ├── brvm_announcements.py
-│   │   ├── richbourse.py
-│   │   ├── richbourse_news.py
-│   │   ├── richbourse_timeseries.py
-│   │   ├── sikafinance.py
-│   │   └── sikafinance_news.py
-│   ├── tools/
-│   │   ├── portfolio_tools.py
-│   │   ├── schemas.py
-│   │   └── stock_tools.py
-│   └── utils/            # Services (metrics, news, plots, user_db, etc.)
-│       ├── _data.py
-│       ├── brvm_basics.py
-│       ├── brvm_companies.py
-│       ├── comparison.py
-│       ├── market_overview.py
-│       ├── metrics.py
-│       ├── news.py
-│       ├── plots.py
-│       ├── stock_metrics.py
-│       ├── timeseries.py
-│       └── user_db.py
+│   ├── models/           # LLM providers: ollama | groq | openrouter
+│   ├── bot/              # Telegram bot (client of the Chat API)
+│   ├── data/             # BRVM_Companies.xlsx, company_details/, series/ (runtime CSVs)
+│   ├── scrapers/         # Rich Bourse, Sika Finance, BRVM.org (+ dividends, trends, SGI)
+│   ├── tools/            # LangChain tools + pydantic schemas
+│   └── utils/            # Services (metrics, news, plots, cache, user_db, ...)
 ├── config.py
-├── run_agent.py
-├── run_api.py            # Chat API (bot talks to this)
+├── main.py               # Single entry: API + Telegram bot
+├── run_agent.py          # CLI agent
+├── run_api.py            # API only
+├── run_telegram_bot.py   # Bot only (requires API)
 ├── run_scrapers.py
-├── run_telegram_bot.py
+├── run_sgi_fetch.py      # Refresh SGI list into app/data/sgi_brvm.json
+├── tests/                # Offline test suites (see below)
 ├── requirements.txt
 ├── requirements-docker.txt
 ├── .env.example
@@ -87,8 +65,7 @@ RealTimeStock/
    Edit `.env` and set at least:
 
    - `TAVILY_API_KEY` — [tavily.com](https://tavily.com)
-
-   For the agent and Telegram bot, run Ollama with a model (e.g. `ollama run glm-5:cloud` or use Ollama Cloud).
+   - LLM provider: `LLM_PROVIDER=ollama|groq|openrouter` + the matching key/model (Ollama local, Ollama Cloud, Groq, or OpenRouter — see `.env.example`)
 
    For the Telegram bot:
 
@@ -102,25 +79,28 @@ RealTimeStock/
    python run_agent.py "Price of NTLC?" # CLI agent
    ```
 
-   **Telegram bot** (talks to Chat API; API runs agents and hides internal errors):
+   **API + Telegram bot** (single process):
 
    ```bash
-   # Terminal 1: start the Chat API
-   python run_api.py
+   python main.py
+   ```
 
-   # Terminal 2: start the bot
-   python run_telegram_bot.py
+   **Or run separately** (two terminals):
+
+   ```bash
+   python run_api.py           # API only
+   python run_telegram_bot.py  # Bot (requires API)
    ```
 
    Set `BRVM_API_URL` in `.env` if the API runs elsewhere (default `http://localhost:8000`).
 
-   **WhatsApp channel** (WhatsApp Business Cloud API — the same Chat API serves it, no extra process):
+   **WhatsApp channel** (WhatsApp Business Cloud API — served by the same Chat API, no extra process):
 
    1. Create a Meta app at [developers.facebook.com](https://developers.facebook.com), add the **WhatsApp** product, and note the *phone number ID* and a *permanent access token* (System User token).
    2. Set `WHATSAPP_VERIFY_TOKEN` (any secret you choose), `WHATSAPP_ACCESS_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` in `.env`.
    3. In the Meta app, configure the webhook: URL `https://<your-api-host>/whatsapp/webhook`, verify token = your `WHATSAPP_VERIFY_TOKEN`, subscribe to the `messages` field. The API must be reachable over **public HTTPS** (reverse proxy, or a tunnel like ngrok for dev).
 
-   WhatsApp users share the Telegram pipeline: same agent, same 30/day free quota (metered as `wa:<phone>`), same memory per user. Text is answered in text; charts are sent as images. Voice/images on WhatsApp are not supported yet. Portfolio/tracking/alerts remain Telegram-only for now (WhatsApp users get a polite notice if they try).
+   WhatsApp users share the Telegram pipeline: same agent, same free daily quota (metered as `wa:<phone>`), same per-user memory. Text in, text out; charts are sent as images. Voice/images on WhatsApp and portfolio/tracking/alerts on WhatsApp are not supported yet.
 
 4. **Tuning (optional, see `.env.example`)**
 
@@ -129,8 +109,10 @@ RealTimeStock/
    - `API_SECRET_KEY` — **required for production**. The bot must send this shared secret as the `X-API-Key` header; the API rejects unauthenticated calls with 401. If empty, the API runs in dev mode (no auth). Generate: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
    - `RATE_LIMIT_PER_MINUTE` (default `30`) — per-user request limit on `/chat` (0 disables).
    - `DAILY_FREE_QUOTA` (default `30`) — free requests per user per day; over-quota users get a friendly "come back tomorrow" reply. Failed requests are refunded; `QUOTA_EXEMPT_IDS` (comma-separated user ids) bypass the limit. Persisted in SQLite, so restarts don't reset it.
+   - `RECURSION_LIMIT` (default `100`) — max agent steps before a partial answer is returned.
+   - Chat memory: checkpoints live in `app/data/chat_memory.db`, are condensed to the last user/answer pairs per thread, and the API wipes all chat memory every 15 minutes (privacy by design). `/clearmemory` clears one user's thread on demand.
 
-   Security notes: portfolio/tracking/alert tools never receive a user id from the model — the identity is injected server-side from the verified chat context, so one user cannot access another user's data. User databases (`app/data/*.db`) are git-ignored and must not be committed.
+   Security notes: portfolio/tracking/alert tools never receive a user id from the model — the identity is injected server-side from the verified chat context, so one user cannot access another user's data. Every reply carries an AI-generated disclaimer. User databases (`app/data/*.db`) are git-ignored and must not be committed.
 
 5. **Tests**
 
@@ -150,7 +132,9 @@ RealTimeStock/
 
    ```bash
    cp .env.example .env
-   # Set TELEGRAM_BOT_TOKEN, ALLOWED_TELEGRAM_IDS
+   # Set TELEGRAM_BOT_TOKEN, ALLOWED_TELEGRAM_IDS, API_SECRET_KEY
    docker compose build
    docker compose up -d bot
    ```
+
+   After a fresh deploy, run `python run_sgi_fetch.py` once to populate the SGI (broker) list.

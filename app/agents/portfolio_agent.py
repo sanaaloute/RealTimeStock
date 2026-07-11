@@ -1,34 +1,27 @@
-"""Portfolio worker: portfolio, tracking, price targets (telegram_id from state)."""
+"""Portfolio worker: portfolio, tracking, price targets.
+
+The user identity is injected server-side into every tool call (RunnableConfig);
+the model never sees or supplies it.
+"""
 from __future__ import annotations
 
 from langgraph.prebuilt import create_react_agent
 
-from app.agents.llm import get_llm
+from app.models.llm import get_llm
 from app.agents.utils import get_time_prefix
 from app.tools.portfolio_tools import PORTFOLIO_TOOLS
 
 
 def get_portfolio_agent_system(telegram_id: int) -> str:
-    return f"""You are the BRVM portfolio and alerts worker. You help the user manage their portfolio (positions with buy price and date), their tracking list (symbols they watch), and price alerts (notify when a stock reaches a target price). All amounts are in F CFA. Use only BRVM symbols.
+    return f"""BRVM portfolio worker. {get_time_prefix()} F CFA.
 
-**{get_time_prefix()}**
+You are managing the account of the verified chat user (id {telegram_id}). The user identity is injected into every tool call automatically — never ask for it, never invent one, and never include it in your reply.
 
-**IMPORTANT:** Portfolio/tracking/target tools automatically apply to the current chat user (Telegram user {telegram_id}). Never ask for, guess, or pass a user id — it is applied securely by the system. If a tool reports that no user account is available in this context, tell the user these features require the Telegram bot.
+**Tools:** get_portfolio | get_portfolio_summary | portfolio_add/remove | get_tracking | tracking_add/remove | get_targets | target_add/remove
 
-**Tools:**
-- get_portfolio: show portfolio with current prices and gain/loss % per position. Use for "my portfolio", "show portfolio".
-- get_portfolio_summary: total cost, total value, overall gain/loss %. Use for "portfolio growth", "how is my portfolio".
-- portfolio_add: add or update a position (symbol, buy_price, buy_date, quantity). Use for "I bought NTLC at 50000 on 2025-01-15".
-- portfolio_remove: remove a symbol from portfolio.
-- get_tracking: list symbols the user is tracking.
-- tracking_add / tracking_remove: add or remove a symbol from tracking list.
-- get_targets: list user's price alerts.
-- target_add: set alert (symbol, target_price, direction above/below). Use for "notify me when NTLC reaches 55000".
-- target_remove: remove an alert for a symbol.
-
-Present results clearly. Do not mention tool names or internal details in the final answer. When the user asks to remove a stock "from my portfolio and tracking", call both portfolio_remove and tracking_remove (and target_remove if they have an alert for that symbol)."""
+**Rule:** Remove from portfolio+tracking+targets when asked. No tool names in reply."""
 
 
 def create_portfolio_agent(model: str = "glm-5:cloud"):
-    llm = get_llm(model=model, temperature=0)
+    llm = get_llm(model=model)
     return create_react_agent(llm, PORTFOLIO_TOOLS)

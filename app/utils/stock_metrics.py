@@ -33,7 +33,7 @@ def get_stock_metrics(
 
     valid = get_valid_symbols()
     if symbol and symbol not in valid:
-        out["error"] = f"{symbol} is not a listed BRVM symbol. This assistant only covers BRVM (Bourse Régionale des Valeurs Mobilières)."
+        out["error"] = f"{symbol} n'est pas un symbole BRVM coté. Cet assistant ne couvre que la BRVM (Bourse Régionale des Valeurs Mobilières)."
         return out
 
     if at_time is None:
@@ -61,8 +61,8 @@ def get_stock_metrics(
     out["at_time"] = d.isoformat()
     out["source"] = "timeseries"
 
-    # Exact-date lookup fails on weekends/holidays: fall back to the most recent
-    # trading day on or before the requested date.
+    # Exact-date lookup fails on weekends/holidays: fall back to the most
+    # recent trading day on or before the requested date.
     row = load_price_on_or_before(symbol, d)
     if row:
         out["price"] = row["price"]

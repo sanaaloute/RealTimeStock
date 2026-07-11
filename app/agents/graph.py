@@ -2,19 +2,24 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
+
+logger = logging.getLogger(__name__)
 from langgraph.graph import StateGraph
 
 import config
-from app.agents.llm import get_llm
+from app.models.llm import get_default_model, get_llm
 from langgraph.checkpoint.memory import MemorySaver
 
-from app.agents.state import AgentState, NextWorker
+from app.agents.state import AgentState, NextWorker, WorkerName
 
 CHAT_MEMORY_DB = Path(__file__).resolve().parent.parent / "data" / "chat_memory.db"
 from app.agents.utils import get_time_prefix
@@ -25,116 +30,189 @@ from app.agents.nlu_agent import create_nlu_node
 from app.agents.scraper_agent import create_scraper_agent, get_scraper_agent_system
 from app.agents.timeseries_agent import create_timeseries_agent, get_timeseries_agent_system
 from app.agents.portfolio_agent import create_portfolio_agent, get_portfolio_agent_system
+from app.agents.prediction_agent import create_prediction_agent, get_prediction_agent_system
+from app.agents.sgi_agent import create_sgi_agent, get_sgi_agent_system
+from app.agents.company_details_agent import create_company_details_agent, get_company_details_agent_system
 
-MEMORY_SUMMARY_THRESHOLD = 26
-MEMORY_KEEP_RECENT = 12
+MEMORY_MAX_MESSAGES = 10  # Keep only last 10 messages (user + final AI pairs)
 
-SUPERVISOR_SYSTEM_TEMPLATE = """BRVM routing coordinator. Output exactly one label—no explanation. All amounts in F CFA.
+SUPERVISOR_SYSTEM_TEMPLATE = """BRVM router. Output one label only. {time_line}
 
-**{time_line}**
+**Rule:** Last message is worker response (data/chart/news) → output FINISH. Do not chain workers.
 
-**Input:** Last message may contain "[NLU] intent=..., suggested_worker=...". Use it to choose next step.
+**Workers:**
+- SCRAPER — Fetch raw data (palmarès, variation, CSV)
+- ANALYTICS — Prices, compare, stats, market overview (numbers, no plots)
+- TIMESERIES — CSV maintenance only: list/update CSVs. Use ONLY when the user explicitly asks to update timeseries files or check their status. Never route normal price/metrics/compare/chart/news questions here.
+- CHARTS — Plot/graph of stock price
+- NEWS — Actualités, communiqués, dividends
+- PREDICTION — Stock predictions, trends table, hausse/baisse/neutre, technical trend for a symbol
+- PORTFOLIO — My portfolio, tracking list, price alerts
+- SGI — Brokers/courtiers BRVM (liste des SGI, où ouvrir un compte, tarifs, contacts)
+- COMPANY_DETAILS — Single-company fiche société: actionnaires, dividende, résultat net, croissance, BNPA, PER, présentation, dirigeants (Sika Finance; data cached per symbol)
+- FINISH — Done, greeting, or off-topic
 
-**Workers (one):**
-- **SCRAPER** — Fetch/refresh raw data (palmarès, variation, CSV, BRVM site). Not for computed metrics or charts.
-- **ANALYTICS** — Market overview, price/volume, compare stocks, stats (avg/median/min/max), BRVM FAQ. Numeric/tabular—not plots.
-- **TIMESERIES** — Check/update CSV files, list CSVs, daily update. CSV ops only—not price questions.
-- **CHARTS** — Chart/graph/plot of stock price. Visual requested.
-- **NEWS** — News, actualités, announcements about BRVM.
-- **PORTFOLIO** — Portfolio, tracking list, price alerts (my portfolio, add NTLC, track SLBC, notify when NTLC hits 55000).
-- **FINISH** — Question answered, or greeting/thanks/off-topic.
-
-**Output:** SCRAPER | ANALYTICS | TIMESERIES | CHARTS | NEWS | PORTFOLIO | FINISH"""
+**Output:** One of SCRAPER | ANALYTICS | TIMESERIES | CHARTS | NEWS | PREDICTION | PORTFOLIO | SGI | COMPANY_DETAILS | FINISH
+(For multi: ANALYTICS,NEWS or SCRAPER|CHARTS — do NOT include TIMESERIES in multi.)"""
 
 
 def _get_supervisor_system() -> str:
     return SUPERVISOR_SYSTEM_TEMPLATE.format(time_line=get_time_prefix())
 
 
-def _parse_next(response: str) -> NextWorker:
+def _parse_next(response: str) -> tuple[NextWorker, list[WorkerName], bool]:
+    """
+    Parse supervisor output. Returns (next, multi_workers, multi_parallel).
+    - If multi_workers non-empty: use those; multi_parallel=True for comma, False for pipe.
+    - Else: next is the single worker or FINISH.
+    """
     text = (response or "").strip().upper()
-    if "SCRAPER" in text:
+    # Sequential: WORKER1|WORKER2
+    if "|" in text:
+        parts = [p.strip() for p in text.split("|") if p.strip()]
+        workers: list[WorkerName] = []
+        for p in parts:
+            w = _label_to_worker(p)
+            # TIMESERIES should not be auto-chained with other workers; it is for explicit CSV maintenance only.
+            if w and w != "FINISH" and w != "timeseries":
+                workers.append(w)
+        if workers:
+            return "FINISH", workers, False  # sequential
+    # Parallel: WORKER1,WORKER2
+    if "," in text:
+        parts = [p.strip() for p in text.split(",") if p.strip()]
+        workers = []
+        for p in parts:
+            w = _label_to_worker(p)
+            # TIMESERIES should not be auto-chained with other workers; it is for explicit CSV maintenance only.
+            if w and w != "FINISH" and w != "timeseries":
+                workers.append(w)
+        if workers:
+            return "FINISH", workers, True  # parallel
+    # Single
+    w = _label_to_worker(text)
+    return (w or "FINISH"), [], False
+
+
+def _label_to_worker(label: str) -> WorkerName | Literal["FINISH"] | None:
+    label = (label or "").strip().upper()
+    if "SCRAPER" in label:
         return "scraper"
-    if "ANALYTICS" in text:
+    if "ANALYTICS" in label:
         return "analytics"
-    if "TIMESERIES" in text:
+    if "TIMESERIES" in label:
         return "timeseries"
-    if "CHARTS" in text:
+    if "CHARTS" in label:
         return "charts"
-    if "NEWS" in text:
+    if "NEWS" in label:
         return "news"
-    if "PORTFOLIO" in text:
+    if "PREDICTION" in label or "PREDICT" in label or "TREND" in label:
+        return "prediction"
+    if "PORTFOLIO" in label:
         return "portfolio"
-    return "FINISH"
+    if "SGI" in label or "COURTIER" in label or "BROKER" in label:
+        return "sgi"
+    if "COMPANY_DETAILS" in label or "FICHE" in label or "SOCIÉTÉ" in label or "SOCIETE" in label or "ACTIONNAIRES" in label or "DIVIDENDE" in label or "RÉSULTAT NET" in label or "RESULTAT NET" in label:
+        return "company_details"
+    if "FINISH" in label or not label:
+        return "FINISH"
+    return None
 
 
-def _summarize_messages(messages: list, model: str) -> str:
-    if not messages:
-        return ""
-    from langchain_core.messages.utils import get_buffer_string
-    llm = get_llm(model=model, temperature=0)
-    text = get_buffer_string(messages)[:8000]
-    prompt = f"""Summarize this BRVM stock market conversation in 2–4 short sentences. Include: stock symbols mentioned (e.g. NTLC, SLBC), what the user asked for, and key facts (prices, dates, comparisons). Omit tool names, file paths, and internal implementation details.
-
-Conversation:
-{text}
-
-Summary:"""
-    try:
-        out = llm.invoke([HumanMessage(content=prompt)])
-        return (getattr(out, "content", None) or str(out)).strip() or "Previous conversation."
-    except Exception:
-        return "Previous conversation."
+def _condense_to_user_final_pairs(messages: list) -> list:
+    """
+    Reduce message list to [user, final_ai, user, final_ai, ...] where final_ai is the
+    reply sent to the user (last AIMessage before next HumanMessage, excluding NLU).
+    """
+    out: list = []
+    i = 0
+    while i < len(messages):
+        if not isinstance(messages[i], HumanMessage):
+            i += 1
+            continue
+        user_msg = messages[i]
+        j = i + 1
+        final_ai = None
+        while j < len(messages):
+            if isinstance(messages[j], HumanMessage):
+                break
+            if isinstance(messages[j], AIMessage):
+                content = str(getattr(messages[j], "content", "") or "")
+                if "[NLU]" not in content:
+                    final_ai = messages[j]
+            j += 1
+        if final_ai is not None:
+            out.append(user_msg)
+            out.append(final_ai)
+        i = j if j > i else i + 1
+    return out[-MEMORY_MAX_MESSAGES:]
 
 
 def _build_supervisor_node(model: str):
-    llm = get_llm(model=model, temperature=0)
+    llm = get_llm(model=model)
 
     def supervisor(state: AgentState) -> dict:
+        logger.info("[GRAPH] node=supervisor start")
         messages = state.get("messages") or []
-        summary = state.get("conversation_summary") or ""
         structured_data = state.get("structured_data")
 
-        if len(messages) > MEMORY_SUMMARY_THRESHOLD:
-            to_summarize = messages[:-MEMORY_KEEP_RECENT]
-            new_summary = _summarize_messages(to_summarize, model)
-            summary = f"{summary}\n{new_summary}".strip() if summary else new_summary
-            messages = list(messages[-MEMORY_KEEP_RECENT:])
         if not messages:
-            return {"messages": messages, "next": "FINISH", "conversation_summary": summary}
+            return {
+                "messages": messages,
+                "next": "FINISH",
+                "multi_workers": [],
+                "multi_parallel": False,
+            }
 
-        last_content = (messages[-1].content if hasattr(messages[-1], "content") else "") or ""
-
-        # Worker already answered and set next=FINISH: stop here without another
-        # LLM routing call. Only the fresh NLU output ("[NLU]" marker) needs routing.
-        if (state.get("next") or "").strip().upper() == "FINISH" and "[NLU]" not in str(last_content):
-            out_done: dict = {"messages": messages, "next": "FINISH"}
-            if summary:
-                out_done["conversation_summary"] = summary
-            return out_done
-
+        last_msg = messages[-1]
+        last_content = (last_msg.content if hasattr(last_msg, "content") else "") or ""
+        # If last message is worker response (not NLU), finish—avoid endless loops
+        if isinstance(last_msg, AIMessage) and "[NLU]" not in str(last_content) and len(str(last_content).strip()) > 20:
+            return {
+                "messages": messages,
+                "next": "FINISH",
+                "multi_workers": [],
+                "multi_parallel": False,
+            }
         if structured_data and "[NLU]" in str(last_content):
             suggested = (structured_data.get("suggested_worker") or "").strip().lower()
-            if suggested in ("scraper", "analytics", "timeseries", "charts", "news", "portfolio"):
-                out: dict = {"messages": messages, "next": suggested}
-                if summary:
-                    out["conversation_summary"] = summary
-                return out
+            if suggested in ("scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction", "sgi", "company_details"):
+                return {
+                    "messages": messages,
+                    "next": suggested,
+                    "multi_workers": [],
+                    "multi_parallel": False,
+                }
 
         time_system = _get_supervisor_system()
-        system_content = time_system
-        if summary:
-            system_content = f"{time_system}\n\nConversation summary (context):\n{summary}"
-        to_send = [SystemMessage(content=system_content)] + list(messages)
+        to_send = [SystemMessage(content=time_system)] + list(messages)
         reply = llm.invoke(to_send)
         content = reply.content if hasattr(reply, "content") else str(reply)
-        next_worker = _parse_next(content)
-        out: dict = {"messages": messages, "next": next_worker}
-        if summary:
-            out["conversation_summary"] = summary
+        next_worker, multi_workers, multi_parallel = _parse_next(content)
+        logger.info("[GRAPH] supervisor -> next=%s multi=%s", next_worker, multi_workers or None)
+        out: dict = {
+            "messages": messages,
+            "next": next_worker,
+            "multi_workers": [],
+            "multi_parallel": False,
+        }
+        if multi_workers:
+            out["multi_workers"] = multi_workers
+            out["multi_parallel"] = multi_parallel
         return out
 
     return supervisor
+
+
+def _log_tools_from_messages(messages: list, agent_name: str) -> None:
+    """Log tool calls found in messages for debugging."""
+    for m in messages:
+        if isinstance(m, ToolMessage) and getattr(m, "name", None):
+            logger.info("[GRAPH] agent=%s tool=%s", agent_name, m.name)
+        if isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
+            for tc in m.tool_calls:
+                name = tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?")
+                logger.info("[GRAPH] agent=%s tool_call=%s", agent_name, name)
 
 
 def _entities_hint(structured_data: dict | None) -> str:
@@ -146,20 +224,22 @@ def _entities_hint(structured_data: dict | None) -> str:
     parts = [f"{k}={v}" for k, v in ent.items() if v]
     if not parts:
         return ""
-    return f"\n**NLU entities (use these in tool calls):** {', '.join(parts)}"
+    return f"\n**CRITICAL - Use these for the CURRENT question (do NOT use symbols from previous messages):** {', '.join(parts)}"
 
 
 def _build_worker_node(
     agent_builder,
     model: str,
+    *,
+    worker_name: str = "worker",
     extract_image_path: bool = False,
     prepend_system: str | None | Callable[[], str] = None,
 ):
     agent = agent_builder(model=model)
 
-    def node(state: AgentState) -> dict:
+    def node(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
+        logger.info("[GRAPH] node=%s start", worker_name)
         messages = state.get("messages") or []
-        summary = state.get("conversation_summary") or ""
         structured_data = state.get("structured_data")
         time_line = get_time_prefix()
         if prepend_system:
@@ -174,22 +254,22 @@ def _build_worker_node(
                     system_content = prepend_system()
             else:
                 system_content = prepend_system
-            if summary:
-                system_content = f"Conversation summary (context):\n{summary}\n\n{system_content}"
             entities_hint = _entities_hint(structured_data)
             if entities_hint:
                 system_content = system_content.rstrip() + entities_hint
             messages = [SystemMessage(content=system_content)] + list(messages)
         else:
             prefix = time_line
-            if summary:
-                prefix = f"Conversation summary:\n{summary}\n\n{prefix}"
             entities_hint = _entities_hint(structured_data)
             if entities_hint:
                 prefix = prefix.rstrip() + entities_hint
             messages = [SystemMessage(content=prefix)] + list(messages)
-        result = agent.invoke({"messages": messages})
+        # Forward the run config so tool-level injections (RunnableConfig, e.g.
+        # the verified user id for portfolio tools) reach nested agents — also
+        # across the multi-worker's thread pool where context vars don't flow.
+        result = agent.invoke({"messages": messages}, config=config)
         out_messages = result.get("messages", messages)
+        _log_tools_from_messages(out_messages, worker_name)
         out: dict = {"messages": out_messages, "next": "FINISH"}
         if extract_image_path:
             path = _extract_image_path_from_messages(out_messages)
@@ -208,7 +288,10 @@ def route_after_nlu(state: AgentState) -> Literal["supervisor", "__end__"]:
 
 def route_after_supervisor(
     state: AgentState,
-) -> Literal["scraper", "analytics", "timeseries", "charts", "news", "portfolio", "__end__"]:
+) -> Literal["scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction", "sgi", "company_details", "multi_worker", "__end__"]:
+    multi = state.get("multi_workers") or []
+    if multi:
+        return "multi_worker"
     next_ = state.get("next") or "FINISH"
     if next_ == "scraper":
         return "scraper"
@@ -220,26 +303,132 @@ def route_after_supervisor(
         return "charts"
     if next_ == "news":
         return "news"
+    if next_ == "prediction":
+        return "prediction"
     if next_ == "portfolio":
         return "portfolio"
+    if next_ == "sgi":
+        return "sgi"
+    if next_ == "company_details":
+        return "company_details"
     return "__end__"
 
 
-def create_master_graph(model: str | None = None, checkpointer: Any | None = None) -> "CompiledStateGraph":
-    model = model or config.OLLAMA_MODEL
+def _build_multi_worker_node(
+    worker_nodes: dict[WorkerName, Callable[..., dict]],
+    model: str,
+) -> Callable[..., dict]:
+    """Run multiple workers in parallel or sequential, merge results."""
+
+    def multi_worker(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
+        workers = state.get("multi_workers") or []
+        logger.info("[GRAPH] node=multi_worker workers=%s parallel=%s", workers, state.get("multi_parallel", False))
+        parallel = state.get("multi_parallel", False)
+        if not workers:
+            return {
+                "messages": state.get("messages", []),
+                "next": "FINISH",
+                "multi_workers": [],
+                "multi_parallel": False,
+            }
+
+        messages = list(state.get("messages") or [])
+        image_path = state.get("image_path")
+        valid = {"scraper", "analytics", "timeseries", "charts", "news", "portfolio", "prediction", "sgi", "company_details"}
+        workers = [w for w in workers if w in valid and w in worker_nodes]
+
+        if parallel:
+            # Run all workers with same input state, merge new AIMessages (preserve worker order)
+            base_len = len(messages)
+            worker_results: dict[WorkerName, dict] = {}
+            with ThreadPoolExecutor(max_workers=len(workers)) as ex:
+                futures = {ex.submit(worker_nodes[w], state, config): w for w in workers}
+                for fut in as_completed(futures):
+                    wn = futures[fut]
+                    try:
+                        res = fut.result()
+                        worker_results[wn] = res
+                    except Exception as e:
+                        logger.warning("Worker %s failed: %s", wn, e)
+            all_new: list = []
+            for wn in workers:
+                res = worker_results.get(wn)
+                if not res:
+                    continue
+                msgs = res.get("messages") or []
+                for m in msgs[base_len:]:
+                    if isinstance(m, AIMessage):
+                        all_new.append(m)
+                if res.get("image_path") and not image_path:
+                    image_path = res["image_path"]
+            out_messages = messages + all_new
+        else:
+            # Sequential: run each worker, pass accumulated state to next
+            current: AgentState = dict(state)
+            for wn in workers:
+                result = worker_nodes[wn](current, config)
+                current = dict(result)
+                if "messages" in result:
+                    current["messages"] = result["messages"]
+                if result.get("image_path"):
+                    current["image_path"] = result["image_path"]
+            out_messages = current.get("messages") or messages
+
+        out: dict = {
+            "messages": out_messages,
+            "next": "FINISH",
+            "multi_workers": [],
+            "multi_parallel": False,
+        }
+        if image_path:
+            out["image_path"] = image_path
+        return out
+
+    return multi_worker
+
+
+def create_master_graph(model: str | None = None, checkpointer: Any | None = None) -> Any:
+    model = model or get_default_model()
     builder = StateGraph(AgentState)
 
     builder.add_node("nlu", create_nlu_node(model))
     builder.add_node("supervisor", _build_supervisor_node(model))
-    builder.add_node("scraper", _build_worker_node(create_scraper_agent, model, prepend_system=get_scraper_agent_system))
-    builder.add_node("analytics", _build_worker_node(create_analytics_agent, model, prepend_system=get_analytics_agent_system))
-    builder.add_node("timeseries", _build_worker_node(create_timeseries_agent, model, prepend_system=get_timeseries_agent_system))
-    builder.add_node("charts", _build_worker_node(create_charts_agent, model, extract_image_path=True, prepend_system=get_charts_agent_system))
-    builder.add_node("news", _build_worker_node(create_news_agent, model, prepend_system=get_news_agent_system))
+
+    worker_nodes_map: dict[WorkerName, Callable[..., dict]] = {}
+    scraper_n = _build_worker_node(create_scraper_agent, model, worker_name="scraper", prepend_system=get_scraper_agent_system)
+    analytics_n = _build_worker_node(create_analytics_agent, model, worker_name="analytics", prepend_system=get_analytics_agent_system)
+    timeseries_n = _build_worker_node(create_timeseries_agent, model, worker_name="timeseries", prepend_system=get_timeseries_agent_system)
+    charts_n = _build_worker_node(create_charts_agent, model, worker_name="charts", extract_image_path=True, prepend_system=get_charts_agent_system)
+    news_n = _build_worker_node(create_news_agent, model, worker_name="news", prepend_system=get_news_agent_system)
 
     def _portfolio_system(state: AgentState) -> str:
         return get_portfolio_agent_system(state.get("telegram_user_id") or 0)
-    builder.add_node("portfolio", _build_worker_node(create_portfolio_agent, model, prepend_system=_portfolio_system))
+    portfolio_n = _build_worker_node(create_portfolio_agent, model, worker_name="portfolio", prepend_system=_portfolio_system)
+    prediction_n = _build_worker_node(create_prediction_agent, model, worker_name="prediction", prepend_system=get_prediction_agent_system)
+    sgi_n = _build_worker_node(create_sgi_agent, model, worker_name="sgi", prepend_system=get_sgi_agent_system)
+    company_details_n = _build_worker_node(create_company_details_agent, model, worker_name="company_details", prepend_system=get_company_details_agent_system)
+
+    builder.add_node("scraper", scraper_n)
+    builder.add_node("analytics", analytics_n)
+    builder.add_node("timeseries", timeseries_n)
+    builder.add_node("charts", charts_n)
+    builder.add_node("news", news_n)
+    builder.add_node("portfolio", portfolio_n)
+    builder.add_node("prediction", prediction_n)
+    builder.add_node("sgi", sgi_n)
+    builder.add_node("company_details", company_details_n)
+
+    worker_nodes_map["scraper"] = scraper_n
+    worker_nodes_map["analytics"] = analytics_n
+    worker_nodes_map["timeseries"] = timeseries_n
+    worker_nodes_map["charts"] = charts_n
+    worker_nodes_map["news"] = news_n
+    worker_nodes_map["portfolio"] = portfolio_n
+    worker_nodes_map["prediction"] = prediction_n
+    worker_nodes_map["sgi"] = sgi_n
+    worker_nodes_map["company_details"] = company_details_n
+
+    builder.add_node("multi_worker", _build_multi_worker_node(worker_nodes_map, model))
 
     builder.set_entry_point("nlu")
     builder.add_conditional_edges("nlu", route_after_nlu)
@@ -250,33 +439,32 @@ def create_master_graph(model: str | None = None, checkpointer: Any | None = Non
     builder.add_edge("charts", "supervisor")
     builder.add_edge("news", "supervisor")
     builder.add_edge("portfolio", "supervisor")
+    builder.add_edge("prediction", "supervisor")
+    builder.add_edge("sgi", "supervisor")
+    builder.add_edge("company_details", "supervisor")
+    builder.add_edge("multi_worker", "supervisor")
 
     cp = checkpointer if checkpointer is not None else MemorySaver()
     return builder.compile(checkpointer=cp)
 
 
-# Compiled graphs are stateless w.r.t. invocations (nodes build per-call state),
-# so we compile once per (model, checkpointer) and reuse. Rebuilding per request
-# re-instantiated 7 LLM clients + 6 ReAct agents on every user message.
-_GRAPH_CACHE: dict[tuple[str, int], Any] = {}
-_GRAPH_CACHE_LOCK = threading.Lock()
+# Compile the graph once per (model, checkpointer): building 9 ReAct workers on
+# every request is wasteful. A None checkpointer (CLI --no-memory) keeps the old
+# behavior — a fresh MemorySaver graph per call.
+_compiled_cache: dict[tuple[str, int], Any] = {}
+_compiled_lock = threading.Lock()
 
 
-def get_compiled_graph(model: str, checkpointer: Any | None = None) -> Any:
-    """Return a cached compiled graph for (model, checkpointer).
-
-    When checkpointer is None, a fresh graph is compiled every time (no memory
-    persistence, e.g. CLI --no-memory) to preserve stateless semantics.
-    """
+def get_compiled_graph(model: str | None = None, checkpointer: Any | None = None) -> Any:
     if checkpointer is None:
         return create_master_graph(model=model, checkpointer=None)
-    key = (model, id(checkpointer))
-    with _GRAPH_CACHE_LOCK:
-        graph = _GRAPH_CACHE.get(key)
+    key = (model or get_default_model(), id(checkpointer))
+    with _compiled_lock:
+        graph = _compiled_cache.get(key)
         if graph is None:
-            graph = create_master_graph(model=model, checkpointer=checkpointer)
-            _GRAPH_CACHE[key] = graph
-        return graph
+            graph = create_master_graph(model=key[0], checkpointer=checkpointer)
+            _compiled_cache[key] = graph
+    return graph
 
 
 def run_agent(
@@ -286,29 +474,62 @@ def run_agent(
     telegram_user_id: int | None = None,
     checkpointer: Any | None = None,
 ) -> dict:
-    model = model or config.OLLAMA_MODEL
-    graph = get_compiled_graph(model, checkpointer)
-    configurable: dict = {"thread_id": thread_id or "default"}
+    model = model or get_default_model()
+    graph = get_compiled_graph(model=model, checkpointer=checkpointer)
+    configurable: dict[str, Any] = {"thread_id": thread_id or "default"}
     if telegram_user_id is not None:
-        # Verified user identity; injected into portfolio tools via run config.
+        # Server-verified identity: portfolio tools read it from here (never from
+        # the model's tool arguments).
         configurable["telegram_user_id"] = telegram_user_id
-    run_config = {"configurable": configurable}
+    run_config = {
+        "configurable": configurable,
+        "recursion_limit": config.RECURSION_LIMIT,
+    }
     current = graph.get_state(run_config)
     existing = (current.values or {}).get("messages") or []
-    messages = list(existing) + [HumanMessage(content=query)]
+    # Keep only last N messages as [user, final_ai, user, final_ai, ...]
+    condensed = _condense_to_user_final_pairs(existing)
+    messages = list(condensed) + [HumanMessage(content=query)]
     initial: AgentState = {"messages": messages}
     if telegram_user_id is not None:
         initial["telegram_user_id"] = telegram_user_id
 
+    def _revert_messages() -> None:
+        try:
+            graph.update_state(run_config, {"messages": condensed})
+        except Exception as upd_err:
+            logger.warning("Could not revert messages on failure: %s", upd_err)
+
     last_error: BaseException | None = None
     for attempt in range(3):
         try:
-            return graph.invoke(initial, config=run_config)
+            result = graph.invoke(initial, config=run_config)
+            if result.get("clarification"):
+                _revert_messages()
+                return result
+            # Success: store only [user, final_ai, ...], last 10
+            new_condensed = _condense_to_user_final_pairs(result.get("messages") or [])
+            try:
+                graph.update_state(run_config, {"messages": new_condensed})
+            except Exception as upd_err:
+                logger.warning("Could not update state with condensed messages: %s", upd_err)
+            return result
         except Exception as e:
+            _revert_messages()
+            if "recursion" in str(e).lower() or "GraphRecursionError" in type(e).__name__:
+                logger.warning("Graph hit recursion limit, returning partial result: %s", e)
+                try:
+                    state = graph.get_state(run_config)
+                    vals = state.values or {}
+                    if vals and vals.get("messages"):
+                        return vals
+                except Exception as get_err:
+                    logger.warning("Could not get partial state: %s", get_err)
             last_error = e
             err_str = str(e).lower()
             is_retryable = (
-                "ssl" in err_str
+                "503" in err_str
+                or "ssl" in err_str
                 or "eof" in err_str
                 or "connection" in err_str
                 or "connect" in err_str

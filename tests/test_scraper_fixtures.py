@@ -46,11 +46,14 @@ class FakeResponse:
 
 
 def patch_get(module, html, recorder=None):
+    """Stub the scraper's network call. Scrapers fetch via
+    `from app.utils.http_client import http_get`, so patch the name on the
+    scraper module itself."""
     def fake_get(url, *args, **kwargs):
         if recorder is not None:
             recorder.append(url)
         return FakeResponse(html)
-    module.requests.get = fake_get
+    module.http_get = fake_get
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +153,7 @@ def test_fetch_error_returns_error_field():
     def boom(*a, **k):
         raise RuntimeError("connection refused")
 
-    ba.requests.get = boom
+    ba.http_get = boom
     out = ba.fetch_brvm_announcements()
     assert out["items"] == [] and out["error"], out
 

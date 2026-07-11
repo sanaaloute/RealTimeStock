@@ -14,7 +14,7 @@ _PATH_LINE = re.compile(
     re.IGNORECASE,
 )
 _TOOL_LINE = re.compile(
-    r"plot_company_chart|get_timeseries|scrape_sikafinance|scrape_richbourse|scrape_brvm|get_stock_metrics|compare_stocks|compute_metrics|ensure_timeseries|list_timeseries_status|I used (?:the )?\w+ (?:tool|function)|called \w+ tool",
+    r"plot_company_chart|get_timeseries|scrape_sikafinance|scrape_richbourse|scrape_brvm|get_stock_metrics|compare_stocks|compute_metrics|ensure_timeseries|list_timeseries_status|I used (?:the )?\w+ (?:tool|function)|called \w+ tool|get_sgi_data|fetch_sgi_data|fetch_sgi_url|get_company_details|fetch_company_details|get_all_trends|get_trends_by_option|get_stock_prediction_detail|get_sikafinance_actualites|get_sikafinance_communiques|get_richbourse_dividends|get_market_news|get_company_news|get_brvm_official_announcements|get_market_overview|get_brvm_basics|get_company_info|portfolio_add|portfolio_remove|get_portfolio|tracking_add|tracking_remove|get_tracking|target_add|target_remove|get_targets",
     re.IGNORECASE,
 )
 

@@ -56,7 +56,9 @@ def test_correct_key_accepted():
     config.API_SECRET_KEY = SECRET
     r = _post(key=SECRET, user=1001)
     assert r.status_code == 200
-    assert r.json()["reply"] == "fake reply to: price of NTLC?"
+    reply = r.json()["reply"]
+    assert reply.startswith("fake reply to: price of NTLC?"), reply
+    assert chat_mod.SOURCE_FOOTER.strip() in reply, "AI disclaimer footer must be appended"
 
 
 def test_rate_limit_per_user():
@@ -66,7 +68,7 @@ def test_rate_limit_per_user():
     assert _post(key=SECRET, user=user).status_code == 200
     assert _post(key=SECRET, user=user).status_code == 200
     r = _post(key=SECRET, user=user)
-    assert r.status_code == 200 and "Too many requests" in r.json().get("error", "")
+    assert r.status_code == 200 and "Trop de requêtes" in r.json().get("error", "")
     # a different user is unaffected
     assert _post(key=SECRET, user=3003).status_code == 200
     config.RATE_LIMIT_PER_MINUTE = 30  # restore

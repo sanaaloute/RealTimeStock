@@ -6,10 +6,10 @@ import re
 import time
 from typing import Any
 
-import requests
 from bs4 import BeautifulSoup
 
 import config
+from app.utils.http_client import http_get
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def fetch_company_news(symbol: str, limit: int = 15) -> dict[str, Any]:
     symbol = (symbol or "").strip().upper()
     out: dict[str, Any] = {"source": "richbourse_news", "symbol": symbol, "url": "", "items": [], "error": None}
     if not symbol:
-        out["error"] = "symbol is required"
+        out["error"] = "Le symbole est requis."
         return out
 
     url = f"{BASE_URL}/{symbol}"
@@ -34,7 +34,7 @@ def fetch_company_news(symbol: str, limit: int = 15) -> dict[str, Any]:
     try:
         if SLEEP > 0:
             time.sleep(SLEEP)
-        resp = requests.get(url, timeout=30, headers={"User-Agent": USER_AGENT})
+        resp = http_get(url, timeout=30, headers={"User-Agent": USER_AGENT})
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as e:

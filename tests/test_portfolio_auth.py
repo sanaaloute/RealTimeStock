@@ -75,7 +75,7 @@ def test_injected_identity_wins_over_malicious_args():
     """Model passes attacker id; write must land on the verified user from config."""
     _use_temp_db()
     content = _call_tool(
-        pt.portfolio_add,
+        pt.portfolio_add_tool,
         args={
             "symbol": "NTLC",
             "buy_price": 50000,
@@ -97,7 +97,7 @@ def test_no_user_context_fails_safe():
     """CLI context (no telegram_user_id in config): no write, clear error."""
     _use_temp_db()
     content = _call_tool(
-        pt.portfolio_add,
+        pt.portfolio_add_tool,
         args={"symbol": "NTLC", "buy_price": 50000, "buy_date": "2025-01-15"},
         user_id=None,
     )

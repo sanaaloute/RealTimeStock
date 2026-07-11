@@ -29,6 +29,7 @@ def _setup():
     # Hermetic: no palmares scrape, no series fetch for missing symbols.
     sm.fetch_palmares = lambda *a, **k: []
     data_mod.ensure_series_csv = lambda symbol: None
+    data_mod.ensure_timeseries_up_to_date = lambda symbol: None
 
 
 def test_exact_trading_day():

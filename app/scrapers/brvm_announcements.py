@@ -5,10 +5,10 @@ import logging
 import time
 from typing import Any
 
-import requests
 from bs4 import BeautifulSoup
 
 import config
+from app.utils.http_client import http_get
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ def fetch_brvm_announcements(limit: int = 20, company_filter: str | None = None)
     try:
         if SLEEP > 0:
             time.sleep(SLEEP)
-        resp = requests.get(ANNOUNCEMENTS_URL, timeout=30, headers={"User-Agent": USER_AGENT})
+        resp = http_get(ANNOUNCEMENTS_URL, timeout=30, headers={"User-Agent": USER_AGENT})
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
     except Exception as e:

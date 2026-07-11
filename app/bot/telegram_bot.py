@@ -1,15 +1,17 @@
-"""Telegram bot: forwards to Chat API, allowed users only. Text and voice."""
+"""Telegram bot: forwards to Chat API. Open to all users; chat and memory are keyed by Telegram user ID."""
 from __future__ import annotations
 
 import asyncio
 import base64
 import logging
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
 import httpx
 from telegram import Update
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import Application, ContextTypes, CommandHandler, MessageHandler, filters
 from telegram.request import HTTPXRequest
 
@@ -20,16 +22,16 @@ from app.utils.user_db import get_or_create_user, has_sent_help, mark_help_sent
 
 logger = logging.getLogger(__name__)
 
+# Network/connection errors that are often transient (proxy, TLS, timeout)
+RETRYABLE_ERRORS = (NetworkError, TimedOut, httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.ConnectTimeout, OSError)
+
 MAX_MESSAGE_LENGTH = 4096  # Telegram limit
 MAX_CAPTION_LENGTH = 1024  # Telegram photo caption limit
 VOICE_LANGUAGE = "fr-FR"  # BRVM / West Africa; use "en-US" for English
-API_TIMEOUT = 120.0  # Agent can take a while
-
-
-def _is_allowed(user_id: int) -> bool:
-    if not config.ALLOWED_TELEGRAM_IDS:
-        return False
-    return user_id in config.ALLOWED_TELEGRAM_IDS
+API_TIMEOUT = 300.0  # Agent + LLM can take several minutes (NLU, supervisor, workers)
+STATUS_UPDATE_INTERVAL_SEC = 5  # Update "please wait" message every N seconds
+WAIT_SPINNER = ("◐", "◓", "◑", "◒")
+WAIT_MESSAGE = "Veuillez patienter — je récupère les données BRVM. Cela peut prendre jusqu'à une minute."
 
 
 def _is_local_api() -> bool:
@@ -48,16 +50,58 @@ async def _call_chat_api(query: str, thread_id: str, telegram_user_id: int) -> d
         resp = await client.post(url, json=payload, headers=headers)
         if resp.status_code == 401:
             logger.error("Chat API rejected our API key (401). Check API_SECRET_KEY on both bot and API.")
-            return {"error": "The bot is not authorized to call the AI service (API key rejected). Contact the administrator."}
+            return {"error": "Le bot n'est pas autorisé à appeler le service IA (clé API rejetée). Contactez l'administrateur."}
         if resp.status_code != 200:
             try:
                 data = resp.json()
                 if "error" in data:
                     return data
-            except Exception:
-                pass
-            return {"error": "The AI service is temporarily unavailable. Try again in a moment."}
+            except Exception as e:
+                logger.debug("Chat API response not JSON: %s", e)
+            return {"error": "Le service IA est temporairement indisponible. Réessayez dans un instant."}
         return resp.json()
+
+
+async def _call_clear_memory(thread_id: str) -> dict[str, Any]:
+    """Call API to clear conversation checkpoint for this thread."""
+    url = f"{config.BRVM_API_URL.rstrip('/')}/clear-memory"
+    headers = {"X-API-Key": config.API_SECRET_KEY} if config.API_SECRET_KEY else None
+    client_kwargs = {"timeout": 10.0}
+    if _is_local_api():
+        client_kwargs["trust_env"] = False
+    async with httpx.AsyncClient(**client_kwargs) as client:
+        resp = await client.post(url, json={"thread_id": thread_id}, headers=headers)
+        if resp.status_code == 200:
+            try:
+                return resp.json()
+            except Exception:
+                return {"ok": True, "message": "Mémoire de conversation effacée."}
+        try:
+            data = resp.json()
+            return data if isinstance(data, dict) else {"ok": False, "error": "Échec de l'effacement de la mémoire."}
+        except Exception:
+            return {"ok": False, "error": "L'API n'a pas pu effacer la mémoire. Réessayez."}
+
+
+async def _status_updater(
+    status_msg: Any,
+    interval: float = STATUS_UPDATE_INTERVAL_SEC,
+    max_updates: int = 60,
+) -> None:
+    """Update the status message every interval with spinner and elapsed time. Stops when cancelled."""
+    start = time.monotonic()
+    for i in range(1, max_updates + 1):
+        try:
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            return
+        elapsed = int(time.monotonic() - start)
+        spinner = WAIT_SPINNER[(i - 1) % len(WAIT_SPINNER)]
+        text = f"{spinner} {WAIT_MESSAGE}\n\n⏱ {elapsed}s"
+        try:
+            await status_msg.edit_text(text)
+        except Exception:
+            return
 
 
 async def _get_query_from_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str | None:
@@ -100,16 +144,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not user:
         return
     user_id = user.id
-    if not _is_allowed(user_id):
-        await update.message.reply_text("You are not authorized to use this bot.")
-        logger.warning("Unauthorized user %s (%s)", user_id, getattr(user, "username", ""))
-        return
+    # Chat and memory are keyed by Telegram user ID so each user has their own conversation
+    thread_id = str(user_id)
 
     query = await _get_query_from_message(update, context)
     if not query:
         await update.message.reply_text(
-            "Send a text message or a voice note with your question (e.g. price of NTLC, compare two stocks). "
-            "If you sent voice and this appears, the audio could not be transcribed."
+            "Envoyez un message texte ou un message vocal avec votre question (ex. cours de NTLC, comparer deux actions). "
+            "Si vous avez envoyé un vocal et que ce message s'affiche, l'audio n'a pas pu être transcrit."
         )
         return
 
@@ -123,14 +165,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(get_help_message())
         mark_help_sent(user_id)
 
-    status = await update.message.reply_text("Thinking…")
+    status = await update.message.reply_text(f"{WAIT_SPINNER[0]} {WAIT_MESSAGE}\n\n⏱ 0s")
+    updater_task: asyncio.Task | None = None
     try:
-        thread_id = str(update.effective_chat.id) if update.effective_chat else str(user_id)
+        updater_task = asyncio.create_task(_status_updater(status))
         result = await _call_chat_api(query, thread_id, user_id)
-    except Exception as e:
-        logger.exception("API call failed for user %s: %s", user_id, e)
-        await status.edit_text("Could not reach the AI service. Try again in a moment.")
+    except httpx.ReadTimeout:
+        if updater_task and not updater_task.done():
+            updater_task.cancel()
+            try:
+                await updater_task
+            except asyncio.CancelledError:
+                pass
+        logger.warning("API call timed out for user %s", user_id)
+        await status.edit_text("L'assistant a mis trop de temps à répondre. Réessayez.")
         return
+    except Exception as e:
+        if updater_task and not updater_task.done():
+            updater_task.cancel()
+            try:
+                await updater_task
+            except asyncio.CancelledError:
+                pass
+        logger.exception("API call failed for user %s: %s", user_id, e)
+        await status.edit_text("Impossible de joindre le service IA. Réessayez dans un instant.")
+        return
+    finally:
+        if updater_task and not updater_task.done():
+            updater_task.cancel()
+            try:
+                await updater_task
+            except asyncio.CancelledError:
+                pass
 
     if "error" in result:
         await status.edit_text(result["error"])
@@ -138,11 +204,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     reply = result.get("reply", "")
     if len(reply) > MAX_MESSAGE_LENGTH:
-        reply = reply[: MAX_MESSAGE_LENGTH - 20] + "\n\n… (truncated)"
+        reply = reply[: MAX_MESSAGE_LENGTH - 20] + "\n\n… (tronqué)"
 
     image_base64 = result.get("image_base64")
     if image_base64:
-        caption = reply[:MAX_CAPTION_LENGTH] if len(reply) <= MAX_CAPTION_LENGTH else reply[: MAX_CAPTION_LENGTH - 20] + "\n… (truncated)"
+        caption = reply[:MAX_CAPTION_LENGTH] if len(reply) <= MAX_CAPTION_LENGTH else reply[: MAX_CAPTION_LENGTH - 20] + "\n… (tronqué)"
         await status.delete()
         try:
             img_bytes = base64.b64decode(image_base64)
@@ -166,11 +232,55 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message and update.effective_user:
-        user_id = update.effective_user.id
-        if not _is_allowed(user_id):
-            await update.message.reply_text("You are not authorized to use this bot.")
-            return
         await update.message.reply_text(get_help_message())
+
+
+async def cmd_clearmemory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clear conversation memory for this user (keyed by Telegram user ID)."""
+    if not update.message or not update.effective_user:
+        return
+    user_id = update.effective_user.id
+    thread_id = str(user_id)
+    try:
+        result = await _call_clear_memory(thread_id)
+        if result.get("ok"):
+            await update.message.reply_text("Mémoire de conversation effacée. Vous pouvez reprendre une nouvelle conversation.")
+        else:
+            await update.message.reply_text(result.get("error", "Échec de l'effacement de la mémoire. Réessayez."))
+    except Exception as e:
+        logger.warning("Clear memory failed for user %s: %s", user_id, e)
+        await update.message.reply_text("Impossible d'effacer la mémoire. Vérifiez que l'API tourne et réessayez.")
+
+
+async def _global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log errors and, for user-facing updates, reply on network/transient errors. Prevents unhandled exception logging."""
+    err = context.error
+    if err is None:
+        return
+    is_retryable = isinstance(err, RETRYABLE_ERRORS) or (
+        isinstance(getattr(err, "__cause__", None), RETRYABLE_ERRORS)
+    )
+    if is_retryable:
+        logger.warning(
+            "Telegram network/connection error (transient): %s: %s",
+            type(err).__name__,
+            err,
+        )
+    else:
+        logger.exception("Telegram bot error: %s", err)
+
+    # If we have a user chat (update from a message), optionally reply on retryable errors
+    if isinstance(update, Update) and update.effective_chat and update.effective_message and is_retryable:
+        try:
+            await update.effective_message.reply_text(
+                "Problème de connexion. Veuillez réessayer dans un instant."
+            )
+        except Exception:
+            pass
+
+
+# How often to poll Telegram for new updates (getUpdates). 1 second for responsive replies.
+POLL_INTERVAL_SEC = 1
 
 
 def build_application() -> Application:
@@ -185,8 +295,10 @@ def build_application() -> Application:
         .request(request)
     )
     app = builder.build()
+    app.add_error_handler(_global_error_handler)
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("clearmemory", cmd_clearmemory))
     app.add_handler(
         MessageHandler(
             (filters.TEXT & ~filters.COMMAND) | filters.VOICE | filters.AUDIO,
@@ -194,3 +306,45 @@ def build_application() -> Application:
         )
     )
     return app
+
+
+def run_polling_with_retry(
+    app: Application,
+    *,
+    allowed_updates: list[str] | None = None,
+    bootstrap_retries: int = 5,
+    poll_interval: float = POLL_INTERVAL_SEC,
+    poll_retry_max: int = 0,
+    poll_retry_delay: float = 30.0,
+    poll_retry_backoff: float = 1.5,
+) -> None:
+    """
+    Run polling with optional retry on network errors.
+    poll_interval: seconds between getUpdates calls (default 1 second).
+    poll_retry_max: 0 = infinite retries; N = up to N restarts after the first run.
+    """
+    allowed_updates = allowed_updates or ["message"]
+    attempt = 0
+    while True:
+        try:
+            app.run_polling(
+                allowed_updates=allowed_updates,
+                bootstrap_retries=bootstrap_retries,
+                poll_interval=poll_interval,
+            )
+            break
+        except RETRYABLE_ERRORS as e:
+            attempt += 1
+            if poll_retry_max and attempt > poll_retry_max:
+                logger.exception("Polling failed after %s attempts (network error). Giving up.", attempt)
+                raise
+            delay = poll_retry_delay * (poll_retry_backoff ** (attempt - 1))
+            logger.warning(
+                "Polling stopped due to network error (%s). Restarting in %.1fs (attempt %s).",
+                e,
+                delay,
+                attempt,
+            )
+            time.sleep(delay)
+        except Exception:
+            raise

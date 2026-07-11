@@ -1,60 +1,26 @@
-# Environment & secrets
-.env
-.env.local
-.env.*.local
-.gitignore
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+*.pyc
+*.pyo
+*.pyd
 
-# Virtual environments
-venv/
+# Virtual env
 .venv/
-env/
-ENV/
+venv/
 
-# Playwright
-playwright-report/
-test-results/
-playwright/.cache/
-.blob-storage/
+# Environment variables
+.env
 
-# IDE & editor
-.idea/
-.vscode/
-*.swp
-*.swo
+# Logs
+*.log
 
 # OS
 .DS_Store
-Thumbs.db
-
-# Testing & tools
-.pytest_cache/
-.coverage
-htmlcov/
-.mypy_cache/
-*.log
 
 # Bot user data (portfolio, tracking, targets, chat memory) and market cache
 app/data/brvm_bot.db
 app/data/chat_memory.db
 app/data/palmares_cache.json
+app/data/sgi_brvm.json
+debug-ce8ad8.log
+app/data/series/*.csv

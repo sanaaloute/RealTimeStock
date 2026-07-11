@@ -75,9 +75,13 @@ def _patch_llm(fake):
     import app.agents.charts_agent as charts_mod
     import app.agents.news_agent as news_mod
     import app.agents.portfolio_agent as portfolio_mod
+    import app.agents.prediction_agent as prediction_mod
+    import app.agents.sgi_agent as sgi_mod
+    import app.agents.company_details_agent as company_details_mod
 
     for mod in (graph_mod, nlu_mod, analytics_mod, scraper_mod, timeseries_mod,
-                charts_mod, news_mod, portfolio_mod):
+                charts_mod, news_mod, portfolio_mod, prediction_mod, sgi_mod,
+                company_details_mod):
         mod.get_llm = lambda *a, **k: fake
 
 
@@ -102,6 +106,73 @@ def test_full_portfolio_flow_and_early_finish():
     assert len(positions) == 1 and positions[0]["symbol"] == "NTLC", positions
     # NLU (1) + worker x2 = 3. A redundant supervisor routing call would make it 4.
     assert LLM_CALLS["n"] == 3, f"expected 3 LLM calls, got {LLM_CALLS['n']}"
+
+
+class RouterFake(GenericFakeChatModel):
+    """Content-routed fake: answers differently for NLU / supervisor / each worker,
+    so parallel workers (threads) never race over a shared message iterator."""
+
+    def __init__(self, **kwargs):
+        super().__init__(messages=iter([AIMessage(content="unused")]), **kwargs)
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        from langchain_core.outputs import ChatGeneration, ChatResult
+        from langchain_core.messages import ToolMessage
+
+        blob = " ".join(str(m.content) for m in messages)[:4000]
+        if "BRVM stock assistant NLU" in blob:
+            # suggested_worker="multi" is invalid -> forces the supervisor LLM call
+            msg = AIMessage(
+                content='{"intent": "portfolio_add", "entities": {"symbol": "NTLC", '
+                '"buy_price": 50000, "buy_date": "2025-01-15"}, "suggested_worker": "multi"}'
+            )
+        elif "BRVM router" in blob:
+            msg = AIMessage(content="ANALYTICS,PORTFOLIO")  # parallel multi-worker
+        elif "BRVM portfolio worker" in blob:
+            if isinstance(messages[-1], ToolMessage):
+                msg = AIMessage(content="NTLC ajoute a votre portefeuille avec succes.")
+            else:
+                msg = AIMessage(
+                    content="",
+                    tool_calls=[{
+                        "name": "portfolio_add",
+                        "args": {"symbol": "NTLC", "buy_price": 50000, "buy_date": "2025-01-15"},
+                        "id": "c1",
+                        "type": "tool_call",
+                    }],
+                )
+        elif "BRVM analytics" in blob:
+            msg = AIMessage(content="Le cours de NTLC est stable aujourd'hui selon les donnees.")
+        else:
+            raise RuntimeError("unexpected prompt: " + blob[:200])
+        return ChatResult(generations=[ChatGeneration(message=msg)])
+
+
+def test_multi_worker_propagates_verified_identity():
+    """Parallel multi-worker runs workers in a thread pool, where context vars do
+    NOT flow: the run config must be forwarded explicitly or portfolio tools lose
+    the verified user id (fail-safe: no write)."""
+    user_db.DB_PATH = Path(tempfile.mkdtemp()) / "e2e_multi.db"
+    user_db.init_db()
+    _patch_llm(RouterFake())
+
+    from app.agents.graph import run_agent
+
+    result = run_agent(
+        "cours NTLC et ajoute NTLC a mon portefeuille",
+        model="fake",
+        thread_id="e2e-multi",
+        telegram_user_id=USER_ID,
+        checkpointer=MemorySaver(),
+    )
+    assert result.get("messages"), "multi-worker run returned no messages"
+    positions = user_db.portfolio_list(USER_ID)
+    assert len(positions) == 1 and positions[0]["symbol"] == "NTLC", (
+        "verified identity must reach portfolio tools through the worker thread pool"
+    )
 
 
 def test_compiled_graph_is_cached():

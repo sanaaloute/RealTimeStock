@@ -110,5 +110,114 @@ class GetCompanyInfoInput(BaseModel):
     symbol: str = Field(description="BRVM symbol (e.g. NTLC, SLBC) to get full name and sector.")
 
 
-# Note: portfolio/tracking/target tools take NO user-id argument. The user
-# identity is injected from graph state (InjectedState) — see portfolio_tools.py.
+class PortfolioAddInput(BaseModel):
+    symbol: str = Field(description="BRVM symbol (e.g. NTLC, SLBC).")
+    buy_price: float = Field(description="Buy price in F CFA.")
+    buy_date: str = Field(description="Buy date YYYY-MM-DD.")
+    quantity: float = Field(default=1.0, description="Number of shares.")
+
+
+class PortfolioRemoveInput(BaseModel):
+    symbol: str = Field(description="BRVM symbol to remove.")
+
+
+class GetPortfolioInput(BaseModel):
+    pass
+
+
+class GetPortfolioSummaryInput(BaseModel):
+    pass
+
+
+class TrackingAddInput(BaseModel):
+    symbol: str = Field(description="BRVM symbol to track.")
+
+
+class TrackingRemoveInput(BaseModel):
+    symbol: str = Field(description="BRVM symbol to remove.")
+
+
+class GetTrackingInput(BaseModel):
+    pass
+
+
+class TargetAddInput(BaseModel):
+    symbol: str = Field(description="BRVM symbol.")
+    target_price: float = Field(description="Target price in F CFA.")
+    direction: str = Field(default="above", description="Notify when price goes 'above' or 'below' target.")
+
+
+class TargetRemoveInput(BaseModel):
+    symbol: str = Field(description="BRVM symbol.")
+
+
+class GetTargetsInput(BaseModel):
+    pass
+
+
+# News tools (news_tools.py)
+class GetSikafinanceActualitesInput(BaseModel):
+    limit: int = Field(default=20, description="Max number of news items to return.")
+
+
+class GetSikafinanceCommuniquesInput(BaseModel):
+    limit: int = Field(default=20, description="Max number of communiqués to return.")
+    company: str | None = Field(default=None, description="Optional: filter by symbol or company name.")
+
+
+class GetRichboursePredictionInput(BaseModel):
+    symbol: str = Field(description="BRVM symbol (e.g. SOGC, NTLC, ORAC) for technical prediction.")
+
+
+class GetRichbourseDividendsInput(BaseModel):
+    limit: int = Field(default=50, description="Max number of dividend entries to return.")
+    symbol: str | None = Field(default=None, description="Optional: filter by symbol or company name.")
+
+
+# Prediction/trends tools (prediction_tools.py)
+class GetAllTrendsInput(BaseModel):
+    limit: int = Field(default=100, description="Max number of stocks to return from the full trends table.")
+
+
+class GetTrendsByOptionInput(BaseModel):
+    trend_option: str = Field(
+        description="Filter by trend: hausse (up), baisse (down), or neutre (neutral).",
+    )
+    limit: int = Field(default=100, description="Max number of stocks to return.")
+
+
+class GetStockPredictionDetailInput(BaseModel):
+    symbol: str = Field(description="BRVM symbol (e.g. SPHC, SOGC, NTLC) for full technical prediction details.")
+
+
+# SGI (brokers) tools
+class GetSgiDataInput(BaseModel):
+    name_filter: str | None = Field(
+        default=None,
+        description="Optional: filter SGIs by name (partial match). Omit to return all.",
+    )
+    country_filter: str | None = Field(
+        default=None,
+        description="Optional: filter by country (e.g. Côte d'Ivoire, Sénégal). Omit to return all.",
+    )
+
+
+class FetchSgiDataInput(BaseModel):
+    pass
+
+
+class FetchSgiUrlInput(BaseModel):
+    url: str = Field(description="Full URL to fetch (e.g. SGI detail_url, tarifs_url, website).")
+
+
+# Company details (Sika Finance société page: presentation, shareholders, performance)
+class GetCompanyDetailsInput(BaseModel):
+    symbol: str = Field(
+        description="Single BRVM symbol (e.g. BOAM, NTLC, SLBC). Required. Use for any question about this company's profile, actionnaires, dividends, net result, growth, or performance table.",
+    )
+
+
+class FetchCompanyDetailsInput(BaseModel):
+    symbol: str = Field(
+        description="BRVM symbol to fetch from Sika Finance and save to cache (e.g. BOAM, NTLC). Call only when get_company_details returned no_local_data or the user explicitly asks to refresh company details.",
+    )

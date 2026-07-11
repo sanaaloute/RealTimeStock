@@ -12,8 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import requests
-
+from app.utils.http_client import http_get
 from .base import BaseScraper
 
 logger = logging.getLogger(__name__)
@@ -61,12 +60,12 @@ class RichBourseTimeseriesScraper(BaseScraper):
             "error": None,
         }
         if not self._symbol:
-            out["error"] = "symbol is required"
+            out["error"] = "Le symbole est requis."
             return out
 
         try:
             self._sleep()
-            resp = requests.get(
+            resp = http_get(
                 self.url,
                 timeout=30,
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0"},
@@ -81,17 +80,20 @@ class RichBourseTimeseriesScraper(BaseScraper):
 
         series = extract_highcharts_series(html)
         if not series:
-            out["error"] = "No Highcharts series found"
+            out["error"] = "Aucune série Highcharts trouvée."
             return out
 
         records = []
-        for timestamp_ms, price in series:
+        for item in series:
+            if not isinstance(item, (list, tuple)) or len(item) != 2:
+                continue
+            timestamp_ms, price = item
             dt = datetime.fromtimestamp(timestamp_ms / 1000)
             records.append({"date": dt, "price": price})
 
         records.sort(key=lambda r: r["date"])
         if not records:
-            out["error"] = "No data points"
+            out["error"] = "Aucun point de donnée."
             return out
 
         min_dt = records[0]["date"]
@@ -102,6 +104,14 @@ class RichBourseTimeseriesScraper(BaseScraper):
         out["rows"] = len(records)
 
         self._output_dir.mkdir(parents=True, exist_ok=True)
+        # Remove any existing CSV files for this symbol so only the latest remains
+        for old_path in self._output_dir.glob(f"{self._symbol}_*.csv"):
+            try:
+                old_path.unlink(missing_ok=True)
+                logger.debug("Removed old series CSV: %s", old_path.name)
+            except OSError as e:
+                logger.warning("Could not remove old CSV %s: %s", old_path, e)
+
         filename = f"{self._symbol}_{min_str}_{max_str}.csv"
         csv_path = self._output_dir / filename
 

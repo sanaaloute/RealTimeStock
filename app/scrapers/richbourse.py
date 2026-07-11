@@ -12,9 +12,9 @@ import re
 import logging
 from typing import Any
 
-import requests
 from bs4 import BeautifulSoup
 
+from app.utils.http_client import http_get
 from .base import BaseScraper
 import config
 
@@ -129,10 +129,10 @@ class RichBourseScraper(BaseScraper):
             "stocks": [],
         }
 
-        # Fetch raw HTML via requests (Tavily markdown breaks table structure)
+        # Fetch raw HTML via httpx + certifi (Tavily markdown breaks table structure)
         try:
             self._sleep()
-            resp = requests.get(
+            resp = http_get(
                 self.url,
                 timeout=30,
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0"},

@@ -1,9 +1,14 @@
-"""LangChain tools for scrapers and services (agent stack: langchain, langgraph, ollama)."""
+"""LangChain tools for scrapers and services (agent stack: langchain, langgraph, multi-provider LLM)."""
 from langchain_core.tools import BaseTool
 
 from .stock_tools import (
     compare_stocks_tool,
     compute_metrics_tool,
+    fetch_company_details_tool,
+    fetch_sgi_data_tool,
+    fetch_sgi_url_tool,
+    get_company_details_tool,
+    get_sgi_data_tool,
     get_stock_metrics_tool,
     get_timeseries_tool,
     scrape_brvm,
@@ -21,6 +26,11 @@ TOOLS: list[BaseTool] = [
     get_timeseries_tool,
     compare_stocks_tool,
     compute_metrics_tool,
+    get_sgi_data_tool,
+    fetch_sgi_data_tool,
+    fetch_sgi_url_tool,
+    get_company_details_tool,
+    fetch_company_details_tool,
 ]
 
 
@@ -40,4 +50,9 @@ __all__ = [
     "get_timeseries_tool",
     "compare_stocks_tool",
     "compute_metrics_tool",
+    "get_sgi_data_tool",
+    "fetch_sgi_data_tool",
+    "fetch_sgi_url_tool",
+    "get_company_details_tool",
+    "fetch_company_details_tool",
 ]
