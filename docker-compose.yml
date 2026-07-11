@@ -73,7 +73,11 @@ services:
   #   http://api:8000/whatsapp/evolution/webhook  (event MESSAGES_UPSERT, base64 on)
   # AUTHENTICATION_API_KEY is YOUR chosen secret — set EVOLUTION_API_KEY in .env.
   evolution:
-    image: atendai/evolution-api:v2.2.3
+    # Official image (namespace moved from atendai/ to evoapicloud/ in v2.3.0).
+    # `homolog` is the actively maintained tag; versioned tags are no longer
+    # published. Note it is a moving tag — `docker compose pull evolution`
+    # to upgrade.
+    image: evoapicloud/evolution-api:homolog
     environment:
       - SERVER_PORT=8080
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-change-me}
