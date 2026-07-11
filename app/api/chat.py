@@ -330,3 +330,8 @@ app.include_router(router)
 from app.api.whatsapp import router as whatsapp_router  # noqa: E402
 
 app.include_router(whatsapp_router)
+
+# WhatsApp via Evolution API webhook (no-op unless EVOLUTION_* env vars are set).
+from app.channels.whatsapp import router as whatsapp_evolution_router  # noqa: E402
+
+app.include_router(whatsapp_evolution_router)
