@@ -11,7 +11,9 @@ RUN pip install --upgrade pip \
 
 # App and data
 COPY config.py .
-COPY run_agent.py run_api.py run_telegram_bot.py run_scrapers.py ./
+COPY run_agent.py run_api.py run_telegram_bot.py run_scrapers.py run_sgi_fetch.py ./
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
 COPY app app/
 
 # Persisted at runtime via volume; ensure dir exists
@@ -22,6 +24,9 @@ RUN mkdir -p /app/app/data/series
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+
+# Entrypoint bootstraps SGI (broker) data into the shared volume on startup.
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Default: run Telegram bot. Override to run CLI agent: python run_agent.py "query"
 CMD ["python", "run_telegram_bot.py"]

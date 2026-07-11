@@ -1,3 +1,7 @@
+# `docker compose up -d` starts the full stack: Chat API + Telegram bot (+ SGI
+# broker data auto-bootstrapped into the shared volume by the image entrypoint —
+# no manual `python run_sgi_fetch.py` step; refreshed when older than 7 days,
+# tunable via SGI_REFRESH_DAYS).
 services:
   api:
     build: .

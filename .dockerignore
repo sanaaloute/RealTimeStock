@@ -24,6 +24,12 @@ env
 data/series/
 app/data/series/
 
+# Never bake local user databases / caches into the image (runtime volume owns them)
+app/data/*.db
+app/data/*.db-*
+app/data/palmares_cache.json
+app/data/sgi_brvm.json
+
 # Tests and dev
 tests
 pytest.ini

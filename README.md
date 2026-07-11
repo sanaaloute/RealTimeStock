@@ -128,13 +128,16 @@ RealTimeStock/
    python tests/test_graph_e2e.py           # full graph with fake LLM (needs full deps)
    ```
 
-   **Docker**
+   **Docker** — the full stack (Chat API + Telegram bot) in one command:
 
    ```bash
    cp .env.example .env
    # Set TELEGRAM_BOT_TOKEN, ALLOWED_TELEGRAM_IDS, API_SECRET_KEY
    docker compose build
-   docker compose up -d bot
+   docker compose up -d
    ```
 
-   After a fresh deploy, run `python run_sgi_fetch.py` once to populate the SGI (broker) list.
+   On startup each container auto-bootstraps the SGI (broker) list into the shared
+   `bot_data` volume (no manual `run_sgi_fetch.py` step) and refreshes it when older
+   than `SGI_REFRESH_DAYS` (default 7). A manual refresh is one command away:
+   `docker compose exec api python run_sgi_fetch.py`.
