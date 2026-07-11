@@ -1,6 +1,6 @@
 # `docker compose up -d` starts the full stack: PostgreSQL + Chat API + Telegram bot
 # + Evolution API (self-hosted WhatsApp gateway). The LLM runs on Ollama Cloud
-# (OLLAMA_CLOUD=true) — no local Ollama container is started by default.
+# (OLLAMA_CLOUD=true); no Ollama container is included.
 # (+ SGI broker data auto-bootstrapped into the shared volume by the image
 # entrypoint — no manual `python run_sgi_fetch.py` step; refreshed when older than
 # 7 days, tunable via SGI_REFRESH_DAYS).
@@ -101,31 +101,7 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
-
-  # Optional: run Ollama LOCALLY (profile-gated: NOT started by `docker compose
-  # up -d`; the default stack uses Ollama Cloud). To use it instead:
-  #   docker compose --profile local-llm up -d ollama
-  #   docker compose exec ollama ollama pull llama3.2:3b
-  #   .env: remove OLLAMA_CLOUD and set OLLAMA_BASE_URL=http://ollama:11434
-  ollama:
-    profiles: ["local-llm"]
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
-    # Uncomment to use GPU (nvidia)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-
 volumes:
   bot_data:
   postgres_data:
-  ollama_data:
   evolution_data:

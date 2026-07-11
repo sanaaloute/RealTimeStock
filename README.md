@@ -132,7 +132,7 @@ RealTimeStock/
    - Unlike the Meta Cloud API, **no public HTTPS endpoint is needed**: Evolution connects *outbound* to WhatsApp, and the webhook travels `evolution → api` inside the compose network. The EC2 security group only needs SSH (port 22).
    - Evolution's port `8080` is bound to `127.0.0.1` in the compose file. For the one-time admin steps (QR pairing, webhook setup), open an SSH tunnel from your machine and run the curls against it:
      `ssh -L 8080:localhost:8080 ec2-user@<ec2-ip>` (or the Session Manager port-forwarding equivalent).
-   - Use an **x86_64 (amd64)** instance type — the Playwright base image is amd64-oriented (Graviton/arm64 is untested). Size: `t3.medium` (4 GB) minimum without Ollama, larger if you run a local model.
+   - Use an **x86_64 (amd64)** instance type — the Playwright base image is amd64-oriented (Graviton/arm64 is untested). Size: `t3.medium` (4 GB) minimum — the LLM runs on Ollama Cloud, so no GPU or extra RAM for local models is needed.
    - The api port `8000` is published as before; keep the security group closed on it unless you also use the Meta webhook or external health checks (the Evolution channel does not need it).
 
 4. **Tuning (optional, see `.env.example`)**
@@ -181,8 +181,8 @@ RealTimeStock/
    (self-hosted WhatsApp gateway on port 8080 — see the Evolution section above for
    the one-time QR pairing + webhook setup; if you don't use WhatsApp, comment out
    the `evolution` service AND its `depends_on` entry under `api`). The LLM runs on
-   Ollama Cloud by default — no local Ollama container is started; for a local model
-   instead: `docker compose --profile local-llm up -d ollama`. To run on SQLite,
+   Ollama Cloud (`OLLAMA_CLOUD=true`) — no Ollama container is included in the stack.
+   To run on SQLite,
    remove `DATABASE_URL` from the compose services — the `bot_data` volume then
    holds the .db files.
 
