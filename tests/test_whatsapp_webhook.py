@@ -17,6 +17,8 @@ from langchain_core.messages import AIMessage  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 import config  # noqa: E402
+config.DATABASE_URL = ""  # force SQLite regardless of local .env
+
 import app.api.chat as chat_mod  # noqa: E402
 import app.api.whatsapp as wa_mod  # noqa: E402
 from app.utils import user_db  # noqa: E402

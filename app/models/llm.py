@@ -12,7 +12,7 @@ def get_default_model() -> str:
         return config.LLM_MODEL
     provider = (config.LLM_PROVIDER or "ollama").strip().lower()
     if provider == "ollama":
-        return config.OLLAMA_MODEL
+        return config.OLLAMA_CLOUD_MODEL if config.OLLAMA_CLOUD else config.OLLAMA_MODEL
     if provider == "groq":
         return config.GROQ_MODEL
     if provider == "openrouter":
@@ -29,9 +29,14 @@ def get_llm(model: str | None = None, temperature: float | None = None, **kwargs
     if temperature is None:
         temperature = config.LLM_TEMPERATURE
     provider = (config.LLM_PROVIDER or "ollama").strip().lower()
-    # Use explicit model arg, then LLM_MODEL env, else provider default
+    # Use explicit model arg, then LLM_MODEL env, else provider default.
+    # In Ollama Cloud mode the local OLLAMA_MODEL tag must not be sent to
+    # ollama.com — the cloud model wins unless explicitly overridden.
+    ollama_default = (
+        config.OLLAMA_CLOUD_MODEL if config.OLLAMA_CLOUD else config.OLLAMA_MODEL
+    )
     effective_model = model or config.LLM_MODEL or (
-        config.OLLAMA_MODEL if provider == "ollama" else
+        ollama_default if provider == "ollama" else
         config.GROQ_MODEL if provider == "groq" else
         config.OPENROUTER_MODEL
     )

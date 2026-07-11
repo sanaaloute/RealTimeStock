@@ -23,6 +23,9 @@ from langchain_core.utils.function_calling import convert_to_openai_tool  # noqa
 from langgraph.graph import StateGraph  # noqa: E402
 from langgraph.prebuilt import ToolNode  # noqa: E402
 
+import config  # noqa: E402
+config.DATABASE_URL = ""  # force SQLite regardless of local .env
+
 import app.tools.portfolio_tools as pt  # noqa: E402
 from app.agents.state import AgentState  # noqa: E402
 from app.utils import user_db  # noqa: E402

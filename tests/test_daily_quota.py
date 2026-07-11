@@ -18,6 +18,9 @@ from langchain_core.messages import AIMessage  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 import config  # noqa: E402
+config.DATABASE_URL = ""  # force SQLite regardless of local .env
+config.API_SECRET_KEY = "k"  # pin secret so a real .env cannot break the suite
+
 import app.api.chat as chat_mod  # noqa: E402
 from app.utils import user_db  # noqa: E402
 

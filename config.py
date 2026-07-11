@@ -82,8 +82,9 @@ LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.0").strip() or "0.0")
 OLLAMA_CLOUD_HOST = "https://ollama.com"
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "").strip() or None
 OLLAMA_CLOUD = os.getenv("OLLAMA_CLOUD", "").strip().lower() in ("1", "true", "yes")
-OLLAMA_CLOUD_MODEL = "glm-5:cloud"
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", OLLAMA_CLOUD_MODEL if OLLAMA_CLOUD else "llama3.2:3b")
+OLLAMA_CLOUD_MODEL = os.getenv("OLLAMA_CLOUD_MODEL", "gpt-oss:120b").strip() or "gpt-oss:120b"
+# Local-only model tag. Ignored when OLLAMA_CLOUD=true (OLLAMA_CLOUD_MODEL wins).
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b").strip() or "llama3.2:3b"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "").strip() or None
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "2m").strip() or "2m"
 

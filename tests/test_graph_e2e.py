@@ -20,6 +20,9 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage  # noqa: E402
 from langgraph.checkpoint.memory import MemorySaver  # noqa: E402
 
+import config  # noqa: E402
+config.DATABASE_URL = ""  # force SQLite regardless of local .env
+
 from app.utils import user_db  # noqa: E402
 
 USER_ID = 123
