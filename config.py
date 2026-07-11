@@ -46,6 +46,11 @@ DAILY_FREE_QUOTA = int(os.getenv("DAILY_FREE_QUOTA", "30"))
 # Accepts raw Telegram ids or channel keys like "wa:22507000000".
 QUOTA_EXEMPT_IDS = {s.strip() for s in os.getenv("QUOTA_EXEMPT_IDS", "").split(",") if s.strip()}
 
+# User database + chat checkpoints. Empty = local SQLite files in app/data/
+# (zero config for dev). Set in production / docker compose to use PostgreSQL
+# (format: postgresql://user:password@host:5432/dbname).
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
 # WhatsApp Business Cloud API channel. All three required to enable; the webhook
 # (GET/POST /whatsapp/webhook) must be reachable over public HTTPS from Meta.
 WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "").strip()

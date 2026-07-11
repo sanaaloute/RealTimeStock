@@ -109,6 +109,7 @@ RealTimeStock/
    - `API_SECRET_KEY` — **required for production**. The bot must send this shared secret as the `X-API-Key` header; the API rejects unauthenticated calls with 401. If empty, the API runs in dev mode (no auth). Generate: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
    - `RATE_LIMIT_PER_MINUTE` (default `30`) — per-user request limit on `/chat` (0 disables).
    - `DAILY_FREE_QUOTA` (default `30`) — free requests per user per day; over-quota users get a friendly "come back tomorrow" reply. Failed requests are refunded; `QUOTA_EXEMPT_IDS` (comma-separated user ids) bypass the limit. Persisted in SQLite, so restarts don't reset it.
+   - `DATABASE_URL` — user data (portfolio, tracking, targets, quota) and chat checkpoints. Empty = local SQLite files in `app/data/` (zero config). Set `postgresql://user:password@host:5432/dbname` for PostgreSQL in production (docker compose wires this automatically via `POSTGRES_PASSWORD`).
    - `RECURSION_LIMIT` (default `100`) — max agent steps before a partial answer is returned.
    - Chat memory: checkpoints live in `app/data/chat_memory.db`, are condensed to the last user/answer pairs per thread, and the API wipes all chat memory every 15 minutes (privacy by design). `/clearmemory` clears one user's thread on demand.
 
@@ -126,16 +127,24 @@ RealTimeStock/
    python tests/test_daily_quota.py         # free daily quota: limits, refunds, rollover (needs full deps)
    python tests/test_whatsapp_webhook.py    # WhatsApp channel: webhook, dedup, chunking (needs full deps)
    python tests/test_graph_e2e.py           # full graph with fake LLM (needs full deps)
+   python tests/test_postgres_backend.py    # SQL translation always; full PG run when TEST_DATABASE_URL is set
    ```
+
+   PostgreSQL integration check: `docker compose up -d db`, then
+   `TEST_DATABASE_URL=postgresql://brvm:<password>@localhost:5432/brvm python tests/test_postgres_backend.py`.
 
    **Docker** — the full stack (Chat API + Telegram bot) in one command:
 
    ```bash
    cp .env.example .env
-   # Set TELEGRAM_BOT_TOKEN, ALLOWED_TELEGRAM_IDS, API_SECRET_KEY
+   # Set TELEGRAM_BOT_TOKEN, ALLOWED_TELEGRAM_IDS, API_SECRET_KEY, POSTGRES_PASSWORD
    docker compose build
    docker compose up -d
    ```
+
+   Services: `db` (PostgreSQL 16, data in the `postgres_data` volume), `api`, `bot`
+   (both wait for the db healthcheck). To run on SQLite instead, remove
+   `DATABASE_URL` from the compose services — the `bot_data` volume then holds the .db files.
 
    On startup each container auto-bootstraps the SGI (broker) list into the shared
    `bot_data` volume (no manual `run_sgi_fetch.py` step) and refreshes it when older

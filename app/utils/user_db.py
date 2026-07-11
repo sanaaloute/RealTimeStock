@@ -1,4 +1,11 @@
-"""SQLite database for user portfolio, tracking list, and price targets. BRVM only."""
+"""User database: portfolio, tracking list, price targets, daily usage. BRVM only.
+
+Backends:
+- SQLite (default): local file at app/data/brvm_bot.db — zero config for dev.
+- PostgreSQL: when config.DATABASE_URL is set (production / docker compose).
+
+All public functions keep identical signatures on both backends.
+"""
 from __future__ import annotations
 
 import sqlite3
@@ -6,13 +13,25 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import config
 from app.utils._data import fetch_palmares
 from app.utils.brvm_companies import get_valid_symbols
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "brvm_bot.db"
+BACKEND = "postgres" if getattr(config, "DATABASE_URL", "") else "sqlite"
+
+DB_ERRORS: tuple = (sqlite3.Error,)
+if BACKEND == "postgres":
+    import psycopg
+
+    DB_ERRORS = (sqlite3.Error, psycopg.Error)
 
 
-def _get_conn() -> sqlite3.Connection:
+def _get_conn():
+    if BACKEND == "postgres":
+        from psycopg.rows import dict_row
+
+        return psycopg.connect(config.DATABASE_URL, row_factory=dict_row)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     # The bot process (alert job) and the API process (portfolio tools) both
     # write this DB. WAL + busy_timeout prevent cross-process lock errors.
@@ -26,55 +45,135 @@ def _get_conn() -> sqlite3.Connection:
     return conn
 
 
+def _sql(stmt: str) -> str:
+    """Translate SQLite-flavored SQL to the active backend (placeholder + dialect)."""
+    if BACKEND == "sqlite":
+        return stmt
+    out = stmt.replace("?", "%s")
+    out = out.replace("MAX(", "GREATEST(")  # scalar max
+    out = out.replace("datetime('now')", "CURRENT_TIMESTAMP")
+    if out.lstrip().upper().startswith("INSERT OR IGNORE INTO"):
+        out = out.replace("INSERT OR IGNORE INTO", "INSERT INTO", 1)
+        out = out.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
+    return out
+
+
+def _val0(row) -> Any:
+    """First column of a row (sqlite3.Row or psycopg dict_row)."""
+    if isinstance(row, dict):
+        return next(iter(row.values()))
+    return row[0]
+
+
+_DDL_SQLITE = [
+    """CREATE TABLE IF NOT EXISTS users (
+        telegram_id INTEGER PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )""",
+    """CREATE TABLE IF NOT EXISTS portfolio (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL,
+        symbol TEXT NOT NULL,
+        buy_price REAL NOT NULL,
+        buy_date TEXT NOT NULL,
+        quantity REAL NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (telegram_id) REFERENCES users(telegram_id),
+        UNIQUE(telegram_id, symbol)
+    )""",
+    """CREATE TABLE IF NOT EXISTS tracking (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL,
+        symbol TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (telegram_id) REFERENCES users(telegram_id),
+        UNIQUE(telegram_id, symbol)
+    )""",
+    """CREATE TABLE IF NOT EXISTS target_alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL,
+        symbol TEXT NOT NULL,
+        target_price REAL NOT NULL,
+        direction TEXT NOT NULL CHECK (direction IN ('above', 'below')),
+        notified INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_portfolio_telegram ON portfolio(telegram_id)",
+    "CREATE INDEX IF NOT EXISTS idx_tracking_telegram ON tracking(telegram_id)",
+    "CREATE INDEX IF NOT EXISTS idx_targets_telegram ON target_alerts(telegram_id)",
+    "CREATE INDEX IF NOT EXISTS idx_targets_pending ON target_alerts(notified) WHERE notified = 0",
+    """CREATE TABLE IF NOT EXISTS usage_daily (
+        user_id TEXT NOT NULL,
+        day TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (user_id, day)
+    )""",
+]
+
+_DDL_POSTGRES = [
+    """CREATE TABLE IF NOT EXISTS users (
+        telegram_id BIGINT PRIMARY KEY,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS portfolio (
+        id BIGSERIAL PRIMARY KEY,
+        telegram_id BIGINT NOT NULL,
+        symbol TEXT NOT NULL,
+        buy_price DOUBLE PRECISION NOT NULL,
+        buy_date TEXT NOT NULL,
+        quantity DOUBLE PRECISION NOT NULL DEFAULT 1,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (telegram_id) REFERENCES users(telegram_id),
+        UNIQUE(telegram_id, symbol)
+    )""",
+    """CREATE TABLE IF NOT EXISTS tracking (
+        id BIGSERIAL PRIMARY KEY,
+        telegram_id BIGINT NOT NULL,
+        symbol TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (telegram_id) REFERENCES users(telegram_id),
+        UNIQUE(telegram_id, symbol)
+    )""",
+    """CREATE TABLE IF NOT EXISTS target_alerts (
+        id BIGSERIAL PRIMARY KEY,
+        telegram_id BIGINT NOT NULL,
+        symbol TEXT NOT NULL,
+        target_price DOUBLE PRECISION NOT NULL,
+        direction TEXT NOT NULL CHECK (direction IN ('above', 'below')),
+        notified INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_portfolio_telegram ON portfolio(telegram_id)",
+    "CREATE INDEX IF NOT EXISTS idx_tracking_telegram ON tracking(telegram_id)",
+    "CREATE INDEX IF NOT EXISTS idx_targets_telegram ON target_alerts(telegram_id)",
+    "CREATE INDEX IF NOT EXISTS idx_targets_pending ON target_alerts(notified) WHERE notified = 0",
+    """CREATE TABLE IF NOT EXISTS usage_daily (
+        user_id TEXT NOT NULL,
+        day TEXT NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (user_id, day)
+    )""",
+]
+
+
 def init_db() -> None:
-    """Create tables if they do not exist."""
+    """Create tables if they do not exist. Cheap to call repeatedly."""
     conn = _get_conn()
     try:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS users (
-                telegram_id INTEGER PRIMARY KEY,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-            CREATE TABLE IF NOT EXISTS portfolio (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                telegram_id INTEGER NOT NULL,
-                symbol TEXT NOT NULL,
-                buy_price REAL NOT NULL,
-                buy_date TEXT NOT NULL,
-                quantity REAL NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                FOREIGN KEY (telegram_id) REFERENCES users(telegram_id),
-                UNIQUE(telegram_id, symbol)
-            );
-            CREATE TABLE IF NOT EXISTS tracking (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                telegram_id INTEGER NOT NULL,
-                symbol TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                FOREIGN KEY (telegram_id) REFERENCES users(telegram_id),
-                UNIQUE(telegram_id, symbol)
-            );
-            CREATE TABLE IF NOT EXISTS target_alerts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                telegram_id INTEGER NOT NULL,
-                symbol TEXT NOT NULL,
-                target_price REAL NOT NULL,
-                direction TEXT NOT NULL CHECK (direction IN ('above', 'below')),
-                notified INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_portfolio_telegram ON portfolio(telegram_id);
-            CREATE INDEX IF NOT EXISTS idx_tracking_telegram ON tracking(telegram_id);
-            CREATE INDEX IF NOT EXISTS idx_targets_telegram ON target_alerts(telegram_id);
-            CREATE INDEX IF NOT EXISTS idx_targets_pending ON target_alerts(notified) WHERE notified = 0;
-            CREATE TABLE IF NOT EXISTS usage_daily (
-                user_id TEXT NOT NULL,
-                day TEXT NOT NULL,
-                count INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (user_id, day)
-            );
-        """)
+        if BACKEND == "postgres":
+            # One round trip in steady state: skip DDL when schema already exists.
+            row = conn.execute("SELECT to_regclass('public.users')").fetchone()
+            if row and _val0(row) is not None:
+                return
+            for stmt in _DDL_POSTGRES:
+                conn.execute(stmt)
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS help_sent_at TEXT")
+            conn.commit()
+            return
+        for stmt in _DDL_SQLITE:
+            conn.execute(stmt)
         conn.commit()
         # Migration: add help_sent_at for new-user welcome (ignore if column exists)
         try:
@@ -97,10 +196,10 @@ def get_daily_usage(user_id: str) -> int:
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT count FROM usage_daily WHERE user_id = ? AND day = ?",
+            _sql("SELECT count FROM usage_daily WHERE user_id = ? AND day = ?"),
             (str(user_id), _today_utc()),
         ).fetchone()
-        return int(row[0]) if row else 0
+        return int(_val0(row)) if row else 0
     finally:
         conn.close()
 
@@ -112,16 +211,16 @@ def increment_daily_usage(user_id: str) -> int:
     try:
         today = _today_utc()
         row = conn.execute(
-            """
+            _sql("""
             INSERT INTO usage_daily (user_id, day, count) VALUES (?, ?, 1)
             ON CONFLICT(user_id, day) DO UPDATE SET count = count + 1
             RETURNING count
-            """,
+            """),
             (str(user_id), today),
         ).fetchone()
-        conn.execute("DELETE FROM usage_daily WHERE day < ?", (today,))
+        conn.execute(_sql("DELETE FROM usage_daily WHERE day < ?"), (today,))
         conn.commit()
-        return int(row[0]) if row else 0
+        return int(_val0(row)) if row else 0
     finally:
         conn.close()
 
@@ -132,7 +231,7 @@ def decrement_daily_usage(user_id: str) -> None:
     conn = _get_conn()
     try:
         conn.execute(
-            "UPDATE usage_daily SET count = MAX(count - 1, 0) WHERE user_id = ? AND day = ?",
+            _sql("UPDATE usage_daily SET count = MAX(count - 1, 0) WHERE user_id = ? AND day = ?"),
             (str(user_id), _today_utc()),
         )
         conn.commit()
@@ -146,7 +245,7 @@ def get_or_create_user(telegram_id: int) -> None:
     conn = _get_conn()
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO users (telegram_id) VALUES (?)",
+            _sql("INSERT OR IGNORE INTO users (telegram_id) VALUES (?)"),
             (telegram_id,),
         )
         conn.commit()
@@ -160,10 +259,10 @@ def has_sent_help(telegram_id: int) -> bool:
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT help_sent_at FROM users WHERE telegram_id = ?",
+            _sql("SELECT help_sent_at FROM users WHERE telegram_id = ?"),
             (telegram_id,),
         ).fetchone()
-        return row is not None and row[0] is not None
+        return row is not None and _val0(row) is not None
     finally:
         conn.close()
 
@@ -174,7 +273,7 @@ def mark_help_sent(telegram_id: int) -> None:
     conn = _get_conn()
     try:
         conn.execute(
-            "UPDATE users SET help_sent_at = datetime('now') WHERE telegram_id = ?",
+            _sql("UPDATE users SET help_sent_at = datetime('now') WHERE telegram_id = ?"),
             (telegram_id,),
         )
         conn.commit()
@@ -199,15 +298,15 @@ def portfolio_add(telegram_id: int, symbol: str, buy_price: float, buy_date: str
     conn = _get_conn()
     try:
         conn.execute(
-            """INSERT INTO portfolio (telegram_id, symbol, buy_price, buy_date, quantity)
+            _sql("""INSERT INTO portfolio (telegram_id, symbol, buy_price, buy_date, quantity)
                VALUES (?, ?, ?, ?, ?)
                ON CONFLICT(telegram_id, symbol) DO UPDATE SET
-                 buy_price=excluded.buy_price, buy_date=excluded.buy_date, quantity=excluded.quantity""",
+                 buy_price=excluded.buy_price, buy_date=excluded.buy_date, quantity=excluded.quantity"""),
             (telegram_id, symbol, buy_price, buy_date_str, quantity),
         )
         conn.commit()
         return {"ok": True, "message": f"Ajout/mise à jour : {symbol} : {quantity} @ {buy_price} F CFA le {buy_date_str}."}
-    except sqlite3.Error as e:
+    except DB_ERRORS as e:
         return {"ok": False, "error": str(e)}
     finally:
         conn.close()
@@ -219,7 +318,7 @@ def portfolio_list(telegram_id: int) -> list[dict[str, Any]]:
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT symbol, buy_price, buy_date, quantity, created_at FROM portfolio WHERE telegram_id = ? ORDER BY symbol",
+            _sql("SELECT symbol, buy_price, buy_date, quantity, created_at FROM portfolio WHERE telegram_id = ? ORDER BY symbol"),
             (telegram_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -232,7 +331,7 @@ def portfolio_remove(telegram_id: int, symbol: str) -> dict[str, Any]:
     symbol = (symbol or "").strip().upper()
     conn = _get_conn()
     try:
-        cur = conn.execute("DELETE FROM portfolio WHERE telegram_id = ? AND symbol = ?", (telegram_id, symbol))
+        cur = conn.execute(_sql("DELETE FROM portfolio WHERE telegram_id = ? AND symbol = ?"), (telegram_id, symbol))
         conn.commit()
         if cur.rowcount:
             return {"ok": True, "message": f"{symbol} retiré de votre portefeuille."}
@@ -281,7 +380,7 @@ def portfolio_summary(telegram_id: int) -> dict[str, Any]:
         else:
             total_value += r["buy_price"] * r["quantity"]  # fallback to cost
     gain_pct = None
-    if total_cost and total_cost > 0:
+    if total_cost and total_value > 0:
         gain_pct = round((total_value - total_cost) / total_cost * 100, 2)
     return {
         "total_cost_fcfa": round(total_cost, 2),
@@ -297,7 +396,7 @@ def tracking_list(telegram_id: int) -> list[dict[str, Any]]:
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT symbol, created_at FROM tracking WHERE telegram_id = ? ORDER BY symbol",
+            _sql("SELECT symbol, created_at FROM tracking WHERE telegram_id = ? ORDER BY symbol"),
             (telegram_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -312,10 +411,10 @@ def tracking_add(telegram_id: int, symbol: str) -> dict[str, Any]:
     get_or_create_user(telegram_id)
     conn = _get_conn()
     try:
-        conn.execute("INSERT OR IGNORE INTO tracking (telegram_id, symbol) VALUES (?, ?)", (telegram_id, symbol))
+        conn.execute(_sql("INSERT OR IGNORE INTO tracking (telegram_id, symbol) VALUES (?, ?)"), (telegram_id, symbol))
         conn.commit()
         return {"ok": True, "message": f"{symbol} ajouté à votre liste de suivi."}
-    except sqlite3.Error as e:
+    except DB_ERRORS as e:
         return {"ok": False, "error": str(e)}
     finally:
         conn.close()
@@ -325,7 +424,7 @@ def tracking_remove(telegram_id: int, symbol: str) -> dict[str, Any]:
     symbol = (symbol or "").strip().upper()
     conn = _get_conn()
     try:
-        cur = conn.execute("DELETE FROM tracking WHERE telegram_id = ? AND symbol = ?", (telegram_id, symbol))
+        cur = conn.execute(_sql("DELETE FROM tracking WHERE telegram_id = ? AND symbol = ?"), (telegram_id, symbol))
         conn.commit()
         if cur.rowcount:
             return {"ok": True, "message": f"{symbol} retiré du suivi."}
@@ -348,13 +447,13 @@ def target_add(telegram_id: int, symbol: str, target_price: float, direction: st
     conn = _get_conn()
     try:
         conn.execute(
-            "INSERT INTO target_alerts (telegram_id, symbol, target_price, direction) VALUES (?, ?, ?, ?)",
+            _sql("INSERT INTO target_alerts (telegram_id, symbol, target_price, direction) VALUES (?, ?, ?, ?)"),
             (telegram_id, symbol, target_price, direction),
         )
         conn.commit()
         dir_fr = "au-dessus" if direction == "above" else "en dessous"
         return {"ok": True, "message": f"Alerte définie : notification quand {symbol} atteint {target_price} F CFA ({dir_fr})."}
-    except sqlite3.Error as e:
+    except DB_ERRORS as e:
         return {"ok": False, "error": str(e)}
     finally:
         conn.close()
@@ -365,7 +464,7 @@ def target_list(telegram_id: int) -> list[dict[str, Any]]:
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT symbol, target_price, direction, notified, created_at FROM target_alerts WHERE telegram_id = ? ORDER BY symbol",
+            _sql("SELECT symbol, target_price, direction, notified, created_at FROM target_alerts WHERE telegram_id = ? ORDER BY symbol"),
             (telegram_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -377,7 +476,7 @@ def target_remove(telegram_id: int, symbol: str) -> dict[str, Any]:
     symbol = (symbol or "").strip().upper()
     conn = _get_conn()
     try:
-        cur = conn.execute("DELETE FROM target_alerts WHERE telegram_id = ? AND symbol = ?", (telegram_id, symbol))
+        cur = conn.execute(_sql("DELETE FROM target_alerts WHERE telegram_id = ? AND symbol = ?"), (telegram_id, symbol))
         conn.commit()
         if cur.rowcount:
             return {"ok": True, "message": f"Alerte de prix supprimée pour {symbol}."}
@@ -392,7 +491,7 @@ def get_pending_alerts() -> list[dict[str, Any]]:
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, telegram_id, symbol, target_price, direction FROM target_alerts WHERE notified = 0"
+            _sql("SELECT id, telegram_id, symbol, target_price, direction FROM target_alerts WHERE notified = 0")
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -402,7 +501,7 @@ def get_pending_alerts() -> list[dict[str, Any]]:
 def mark_alert_notified(alert_id: int) -> None:
     conn = _get_conn()
     try:
-        conn.execute("UPDATE target_alerts SET notified = 1 WHERE id = ?", (alert_id,))
+        conn.execute(_sql("UPDATE target_alerts SET notified = 1 WHERE id = ?"), (alert_id,))
         conn.commit()
     finally:
         conn.close()

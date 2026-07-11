@@ -1,17 +1,41 @@
-# `docker compose up -d` starts the full stack: Chat API + Telegram bot (+ SGI
-# broker data auto-bootstrapped into the shared volume by the image entrypoint —
-# no manual `python run_sgi_fetch.py` step; refreshed when older than 7 days,
-# tunable via SGI_REFRESH_DAYS).
+# `docker compose up -d` starts the full stack: PostgreSQL + Chat API + Telegram bot
+# (+ SGI broker data auto-bootstrapped into the shared volume by the image
+# entrypoint — no manual `python run_sgi_fetch.py` step; refreshed when older than
+# 7 days, tunable via SGI_REFRESH_DAYS).
+#
+# Data lives in PostgreSQL (user data + chat checkpoints) when DATABASE_URL is set
+# (default here). To run on local SQLite instead, remove DATABASE_URL from both
+# services; the bot_data volume then holds the .db files.
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: brvm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-brvm}
+      POSTGRES_DB: brvm
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brvm -d brvm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   api:
     build: .
     image: realtimestock-bot:latest
     command: python run_api.py
     env_file: .env
+    environment:
+      - DATABASE_URL=postgresql://brvm:${POSTGRES_PASSWORD:-brvm}@db:5432/brvm
     ports:
       - "8000:8000"
     volumes:
       - bot_data:/app/app/data
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
   bot:
@@ -20,10 +44,14 @@ services:
     env_file: .env
     environment:
       - BRVM_API_URL=http://api:8000
+      - DATABASE_URL=postgresql://brvm:${POSTGRES_PASSWORD:-brvm}@db:5432/brvm
     volumes:
       - bot_data:/app/app/data
     depends_on:
-      - api
+      api:
+        condition: service_started
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
   # Optional: run Ollama in Docker. Start with: docker compose up -d ollama
@@ -47,4 +75,5 @@ services:
 
 volumes:
   bot_data:
+  postgres_data:
   ollama_data:

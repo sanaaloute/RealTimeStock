@@ -76,9 +76,9 @@ def _rate_limited(key: str) -> bool:
     return False
 
 
-# One persistent checkpointer for the process: created once (not per request),
-# usable from uvicorn's worker threads (check_same_thread=False), WAL mode so
-# concurrent readers/writers don't block each other.
+# One persistent checkpointer for the process: created once (not per request).
+# PostgreSQL when DATABASE_URL is set, else a local SQLite file (WAL mode,
+# check_same_thread=False so uvicorn's worker threads can share it).
 _checkpointer = None
 _checkpointer_lock = threading.Lock()
 
@@ -88,18 +88,29 @@ def _get_checkpointer():
     if _checkpointer is None:
         with _checkpointer_lock:
             if _checkpointer is None:
-                from langgraph.checkpoint.sqlite import SqliteSaver
+                if config.DATABASE_URL:
+                    import psycopg
+                    from langgraph.checkpoint.postgres import PostgresSaver
 
-                CHAT_MEMORY_DB.parent.mkdir(parents=True, exist_ok=True)
-                conn = sqlite3.connect(
-                    str(CHAT_MEMORY_DB), check_same_thread=False, timeout=30.0
-                )
-                try:
-                    conn.execute("PRAGMA journal_mode=WAL")
-                    conn.execute("PRAGMA busy_timeout=30000")
-                except sqlite3.Error as e:
-                    logger.warning("SQLite pragmas skipped: %s", e)
-                _checkpointer = SqliteSaver(conn)
+                    # psycopg3 connections are thread-safe; checkpoint ops just
+                    # serialize behind the connection lock (fine at our scale).
+                    conn = psycopg.connect(config.DATABASE_URL)
+                    saver = PostgresSaver(conn)
+                    saver.setup()  # creates checkpoint tables if missing
+                    _checkpointer = saver
+                else:
+                    from langgraph.checkpoint.sqlite import SqliteSaver
+
+                    CHAT_MEMORY_DB.parent.mkdir(parents=True, exist_ok=True)
+                    conn = sqlite3.connect(
+                        str(CHAT_MEMORY_DB), check_same_thread=False, timeout=30.0
+                    )
+                    try:
+                        conn.execute("PRAGMA journal_mode=WAL")
+                        conn.execute("PRAGMA busy_timeout=30000")
+                    except sqlite3.Error as e:
+                        logger.warning("SQLite pragmas skipped: %s", e)
+                    _checkpointer = SqliteSaver(conn)
     return _checkpointer
 
 
@@ -165,7 +176,22 @@ class ClearMemoryRequest(BaseModel):
 
 
 def clear_all_chat_memory() -> None:
-    """Erase all conversation checkpoints and writes from the chat memory DB. Safe to call if DB/tables do not exist."""
+    """Erase all conversation checkpoints. Safe to call if DB/tables do not exist."""
+    if config.DATABASE_URL:
+        try:
+            import psycopg
+
+            with psycopg.connect(config.DATABASE_URL) as conn:
+                for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+                    try:
+                        conn.execute(f"DELETE FROM {table}")
+                    except psycopg.Error:
+                        pass  # table may not exist yet
+                conn.commit()
+            logger.info("Chat memory wiped (all threads, PostgreSQL).")
+        except Exception as e:
+            logger.warning("Chat memory wipe failed: %s", e)
+        return
     if not CHAT_MEMORY_DB.exists():
         return
     try:
@@ -261,11 +287,8 @@ def chat(req: ChatRequest) -> ChatResponse | ChatError:
 def clear_memory(req: ClearMemoryRequest) -> dict:
     """Clear conversation checkpoint for the given thread_id. Bot can call this for /clearmemory."""
     try:
-        CHAT_MEMORY_DB.parent.mkdir(parents=True, exist_ok=True)
-        from langgraph.checkpoint.sqlite import SqliteSaver
-
-        with SqliteSaver.from_conn_string(str(CHAT_MEMORY_DB)) as checkpointer:
-            checkpointer.delete_thread(req.thread_id)
+        # Works on both backends (SqliteSaver / PostgresSaver share this API).
+        _get_checkpointer().delete_thread(req.thread_id)
         return {"ok": True, "message": "Mémoire de conversation effacée."}
     except Exception as e:
         logger.exception("Clear memory error: %s", e)
