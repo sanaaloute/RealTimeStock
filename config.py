@@ -59,12 +59,6 @@ WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()
 WHATSAPP_ENABLED = bool(WHATSAPP_VERIFY_TOKEN and WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-ALLOWED_TELEGRAM_IDS: list[int] = []
-_raw = os.getenv("ALLOWED_TELEGRAM_IDS", "").strip()
-if _raw:
-    for s in _raw.replace(" ", "").split(","):
-        if s.isdigit():
-            ALLOWED_TELEGRAM_IDS.append(int(s))
 
 _raw_symbols = os.getenv("TIMESERIES_SYMBOLS", "").strip()
 if _raw_symbols:
